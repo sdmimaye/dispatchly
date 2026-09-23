@@ -163,6 +163,13 @@ internal static class PostgresSql
             """;
     }
 
+    public static string CreateIdempotencyInbox(PostgresTransportOptions options) => $"""
+        CREATE TABLE IF NOT EXISTS {Qualify(options.Schema, IdentifierRules.IdempotencyInboxTable)} (
+            id uuid PRIMARY KEY,
+            completed_at timestamptz NOT NULL
+        );
+        """;
+
     public static string Insert(PostgresTransportOptions options, string table) => $"""
         INSERT INTO {Qualify(options.Schema, table)} (id, payload)
         VALUES (@id, @payload);

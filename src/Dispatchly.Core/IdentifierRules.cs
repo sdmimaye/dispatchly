@@ -14,12 +14,16 @@ public static partial class IdentifierRules
     /// <summary>Suffix appended to the dead-letter table.</summary>
     public const string DeadLetterSuffix = "_dead_letter";
 
+    /// <summary>Table that stores completed message identifiers when idempotency is enabled.</summary>
+    public const string IdempotencyInboxTable = "idempotency_inbox";
+
     /// <summary>Longest outbox table name that still leaves room for the dead-letter suffix.</summary>
     public const int MaxTableNameLength = MaxLength - 12;
 
     private static readonly HashSet<string> ReservedTables = new(StringComparer.Ordinal)
     {
         "outbox_table",
+        IdempotencyInboxTable,
         "settings",
     };
 

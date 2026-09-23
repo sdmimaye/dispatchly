@@ -23,7 +23,7 @@ Register one transport. A second `Use*Transport` call throws.
 
 ## Durability
 
-Handlers must be idempotent. A crash after the handler returns and before the row is marked delivered can run the handler again.
+Handlers must be idempotent. A crash after the handler returns and before the row is marked delivered can run the handler again. `UsePostgresIdempotency` and `UseSqlServerIdempotency` close that gap when the handler commits its writes on the delivery transaction. `UseInMemoryIdempotency` only remembers identifiers until the process exits.
 
 The PostgreSQL transport inserts and commits the row inside `IMessagePublisher.PublishAsync`. A returned `MessageId` means the row is durable. `pg_notify` runs from an insert trigger and is delivered only after that commit. The .NET host only `LISTEN`s. It does not poll. Publish is not enlisted in any other database transaction.
 
@@ -70,6 +70,23 @@ services.AddDispatchly()
 ```
 
 Generated serialization supports public properties of primitive types, `string`, `Guid`, and the built-in date and time types. For anything else, pass your own `JsonTypeInfo<T>`.
+
+## Pipeline
+
+`UseBehavior<TBehavior>` adds a step around every delivery. The first registration is the outermost. A behavior sees the deserialized message, `MessageContext`, and the delivery scope. Call `next` to continue. Return without calling it to stop the pipeline. A delivery that returns without throwing is still acknowledged.
+
+```csharp
+services.AddDispatchly()
+    .AddHandler<OrderPlaced, OrderPlacedHandler>(OrderJsonContext.Default.OrderPlaced)
+    .UsePostgresTransport(options => options.ConnectionString = connectionString)
+    .UsePostgresIdempotency();
+```
+
+`UsePostgresIdempotency`, `UseSqlServerIdempotency`, and `UseInMemoryIdempotency` register `IdempotencyBehavior`. Call the transport method first. The durable stores create `{schema}.idempotency_inbox`. That name is reserved and cannot be a message table.
+
+The behavior inserts the message id inside a database transaction and commits that transaction only after the handler returns. Put handler writes on `context.GetRequiredFeature<DbTransaction>()` so they commit or roll back with the inbox row. A crash before the commit rolls the writes back and delivery runs again. A crash after the commit, including a crash before the outbox row is acknowledged, skips the handler. The in-memory store has no transaction. Inbox rows are kept. Purging them is out of scope.
+
+A different store can implement `IIdempotencyStore` and be registered with `UseBehavior<IdempotencyBehavior>()`.
 
 ## Outbox layout
 

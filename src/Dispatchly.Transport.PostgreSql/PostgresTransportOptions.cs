@@ -36,6 +36,8 @@ public sealed class PostgresTransportOptions
     /// </summary>
     public bool ScheduleRedelivery { get; set; } = true;
 
+    internal bool IdempotencyEnabled { get; set; }
+
     internal void Validate()
     {
         if (string.IsNullOrWhiteSpace(ConnectionString))

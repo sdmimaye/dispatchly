@@ -30,4 +30,37 @@ public static class SqlServerTransportExtensions
         builder.Services.AddHostedService<SqlServerListenService>();
         return builder;
     }
+
+    /// <summary>
+    /// Skips a handler when its <see cref="MessageId" /> is already in <c>idempotency_inbox</c>.
+    /// The inbox row and handler writes that use <see cref="MessageContext.GetRequiredFeature{TFeature}" />
+    /// of <see cref="System.Data.Common.DbTransaction" /> commit together.
+    /// Call this after <see cref="UseSqlServerTransport" />.
+    /// </summary>
+    public static DispatchlyBuilder UseSqlServerIdempotency(this DispatchlyBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        if (!string.Equals(builder.TransportName, "SQL Server", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Call UseSqlServerTransport before UseSqlServerIdempotency.");
+        }
+
+        RequireOptions(builder).IdempotencyEnabled = true;
+        builder.Services.AddSingleton<IIdempotencyStore, SqlServerIdempotencyStore>();
+        return builder.UseBehavior<IdempotencyBehavior>();
+    }
+
+    private static SqlServerTransportOptions RequireOptions(DispatchlyBuilder builder)
+    {
+        foreach (var descriptor in builder.Services)
+        {
+            if (descriptor.ServiceType == typeof(SqlServerTransportOptions)
+                && descriptor.ImplementationInstance is SqlServerTransportOptions options)
+            {
+                return options;
+            }
+        }
+
+        throw new InvalidOperationException("Call UseSqlServerTransport before UseSqlServerIdempotency.");
+    }
 }

@@ -23,6 +23,7 @@ public class MessageDispatcherTests
 
         var services = new ServiceCollection();
         services.AddSingleton<IMessageTypeCatalog>(catalog);
+        services.AddSingleton(new MessagePipeline([]));
         services.AddSingleton<IMessageDispatcher, MessageDispatcher>();
         services.AddScoped<ScopeMarker>();
         await using var provider = services.BuildServiceProvider();
@@ -40,6 +41,7 @@ public class MessageDispatcherTests
     {
         var services = new ServiceCollection();
         services.AddSingleton<IMessageTypeCatalog>(new MessageTypeCatalog());
+        services.AddSingleton(new MessagePipeline([]));
         services.AddSingleton<IMessageDispatcher, MessageDispatcher>();
         await using var provider = services.BuildServiceProvider();
         var dispatcher = provider.GetRequiredService<IMessageDispatcher>();

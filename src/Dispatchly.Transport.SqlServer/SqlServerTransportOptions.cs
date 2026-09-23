@@ -36,6 +36,8 @@ public sealed class SqlServerTransportOptions
     /// </summary>
     public bool ScheduleRedelivery { get; set; } = true;
 
+    internal bool IdempotencyEnabled { get; set; }
+
     internal int RedeliveryIntervalMinutes { get; private set; } = 1;
 
     internal void Validate()

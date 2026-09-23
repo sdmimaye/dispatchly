@@ -26,5 +26,5 @@ This is not the modular-monolith application stack. Do not add a web UI, Identit
 - PostgreSQL integration tests belong in `Dispatchly.Transport.PostgreSql.Tests` and use Testcontainers.
 - SQL Server integration tests belong in `Dispatchly.Transport.SqlServer.Tests` and use Testcontainers.
 - Only one transport may be registered.
-- Handlers must be idempotent. PostgreSQL and SQL Server delivery are at-least-once. In-memory delivery is lost on process exit.
+- Handlers must be idempotent. PostgreSQL and SQL Server delivery are at-least-once. In-memory delivery is lost on process exit. `UsePostgresIdempotency` and `UseSqlServerIdempotency` commit handler writes made on the delivery `DbTransaction` together with the message id.
 - Do not add `Co-authored-by` trailers to commits.

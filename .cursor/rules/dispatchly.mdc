@@ -13,5 +13,5 @@ Open-source outbox messaging library. Do not add Blazor, MudBlazor, Identity, EF
 - SQL Server tests use Testcontainers and live in `Dispatchly.Transport.SqlServer.Tests`
 - Public async methods take `CancellationToken` last
 - Register one transport per host
-- Delivery is at-least-once. Handlers must be idempotent
+- Delivery is at-least-once. Handlers must be idempotent. Durable idempotency commits handler writes on the delivery transaction with the message id
 - Do not add `Co-authored-by` trailers to commits

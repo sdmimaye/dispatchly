@@ -33,6 +33,12 @@ internal sealed class PostgresSchemaProvisioner
             );
             """,
             cancellationToken).ConfigureAwait(false);
+        if (_options.IdempotencyEnabled)
+        {
+            await ExecuteAsync(connection, PostgresSql.CreateIdempotencyInbox(_options), cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         await ExecuteAsync(connection, PostgresSql.NotifyFunction(_options), cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(connection, PostgresSql.RedeliverFunction(_options), cancellationToken).ConfigureAwait(false);
 
