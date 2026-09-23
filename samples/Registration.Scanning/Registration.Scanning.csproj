@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Dispatchly.DependencyInjection.Reflection/Dispatchly.DependencyInjection.Reflection.csproj" />
+    <ProjectReference Include="../../src/Dispatchly.Transport.InMemory/Dispatchly.Transport.InMemory.csproj" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,17 @@
+---
+description: Dispatchly library conventions
+alwaysApply: true
+---
+
+# Dispatchly
+
+Open-source outbox messaging library. Do not add Blazor, MudBlazor, Identity, EF Core, DispatchR, or a web host. Aspire belongs only in `samples/Aspire`.
+
+- `net10.0`, central package management, nullable, warnings as errors
+- xUnit v3 with `Assert.*`. Do not add FluentAssertions
+- PostgreSQL tests use Testcontainers and live in `Dispatchly.Transport.PostgreSql.Tests`
+- SQL Server tests use Testcontainers and live in `Dispatchly.Transport.SqlServer.Tests`
+- Public async methods take `CancellationToken` last
+- Register one transport per host
+- Delivery is at-least-once. Handlers must be idempotent
+- Do not add `Co-authored-by` trailers to commits

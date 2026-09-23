@@ -1,0 +1,17 @@
+bin/
+obj/
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+TestResults/
+artifacts/
+.build/
+.DS_Store
+*.DotSettings.user
+coverage/
+*.nupkg
+*.snupkg

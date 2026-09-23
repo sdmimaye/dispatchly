@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Dispatchly</RootNamespace>
+    <Description>Manual Microsoft.Extensions.DependencyInjection registration for Dispatchly.</Description>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Dispatchly.Core/Dispatchly.Core.csproj" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Dispatchly.Transport.InMemory" />
+    <InternalsVisibleTo Include="Dispatchly.Transport.PostgreSql" />
+    <InternalsVisibleTo Include="Dispatchly.Transport.SqlServer" />
+  </ItemGroup>
+</Project>
