@@ -1,7 +1,7 @@
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Dispatchly;
+namespace Dispatchly.Transport.PostgreSql;
 
 internal sealed class PostgresMessageStore
 {

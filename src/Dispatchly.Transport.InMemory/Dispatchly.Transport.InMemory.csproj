@@ -1,6 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <RootNamespace>Dispatchly</RootNamespace>
     <Description>Volatile in-process transport for Dispatchly. Messages are lost when the process exits.</Description>
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>

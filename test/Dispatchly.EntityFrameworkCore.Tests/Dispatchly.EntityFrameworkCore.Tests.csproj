@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../../src/Dispatchly.EntityFrameworkCore/Dispatchly.EntityFrameworkCore.csproj" />
+    <ProjectReference Include="../../src/Dispatchly.Transport.PostgreSql/Dispatchly.Transport.PostgreSql.csproj" />
+    <ProjectReference Include="../../src/Dispatchly.Transport.SqlServer/Dispatchly.Transport.SqlServer.csproj" />
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="Testcontainers.MsSql" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="xunit.v3.mtp-v2" />
+  </ItemGroup>
+</Project>

@@ -1,4 +1,4 @@
-namespace Dispatchly;
+namespace Dispatchly.Core;
 
 /// <summary>
 /// Skips a handler when <see cref="MessageContext.Id" /> was already completed.

@@ -1,4 +1,4 @@
-namespace Dispatchly;
+namespace Dispatchly.Transport.InMemory;
 
 /// <summary>Options for the in-memory transport.</summary>
 public sealed class InMemoryTransportOptions

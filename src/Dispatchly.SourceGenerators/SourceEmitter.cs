@@ -64,11 +64,11 @@ internal static class SourceEmitter
         builder.AppendLine("    {");
         builder.AppendLine("        public static global::Microsoft.Extensions.DependencyInjection.IServiceCollection AddDispatchlyGeneratedHandlers(this global::Microsoft.Extensions.DependencyInjection.IServiceCollection services)");
         builder.AppendLine("        {");
-        builder.AppendLine("            AddDispatchlyGeneratedHandlers(global::Dispatchly.DispatchlyServiceCollectionExtensions.AddDispatchly(services));");
+        builder.AppendLine("            AddDispatchlyGeneratedHandlers(global::Dispatchly.DependencyInjection.DispatchlyServiceCollectionExtensions.AddDispatchly(services));");
         builder.AppendLine("            return services;");
         builder.AppendLine("        }");
         builder.AppendLine();
-        builder.AppendLine("        public static global::Dispatchly.DispatchlyBuilder AddDispatchlyGeneratedHandlers(this global::Dispatchly.DispatchlyBuilder builder)");
+        builder.AppendLine("        public static global::Dispatchly.DependencyInjection.DispatchlyBuilder AddDispatchlyGeneratedHandlers(this global::Dispatchly.DependencyInjection.DispatchlyBuilder builder)");
         builder.AppendLine("        {");
         var identifiers = MessageIdentifiers(handlers);
         foreach (var handler in handlers)

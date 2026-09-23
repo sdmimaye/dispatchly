@@ -1,4 +1,4 @@
-namespace Dispatchly;
+namespace Dispatchly.Core;
 
 /// <summary>Message types registered with Dispatchly.</summary>
 public interface IMessageTypeCatalog

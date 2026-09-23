@@ -1,4 +1,4 @@
-namespace Dispatchly;
+namespace Dispatchly.Core;
 
 /// <summary>A message type registered for serialization and delivery.</summary>
 public sealed class MessageTypeRegistration

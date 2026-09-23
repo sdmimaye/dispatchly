@@ -1,4 +1,4 @@
-namespace Dispatchly;
+namespace Dispatchly.Transport.InMemory;
 
 internal sealed record InMemoryEnvelope(
     MessageId Id,

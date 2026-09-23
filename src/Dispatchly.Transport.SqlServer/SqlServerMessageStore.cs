@@ -1,6 +1,6 @@
 using Microsoft.Data.SqlClient;
 
-namespace Dispatchly;
+namespace Dispatchly.Transport.SqlServer;
 
 internal sealed class SqlServerMessageStore
 {

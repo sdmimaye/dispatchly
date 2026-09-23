@@ -1,5 +1,7 @@
-using Dispatchly;
+using Dispatchly.Abstractions;
+using Dispatchly.Core;
 using Dispatchly.DependencyInjection;
+using Dispatchly.Transport.InMemory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 

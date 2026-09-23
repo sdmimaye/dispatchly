@@ -15,7 +15,7 @@ internal static class TableNameResolver
         foreach (var attribute in message.GetAttributes())
         {
             if (attribute.AttributeClass?.Name == "DispatchlyTableAttribute"
-                && attribute.AttributeClass.ContainingNamespace.ToDisplayString() == "Dispatchly"
+                && attribute.AttributeClass.ContainingNamespace.ToDisplayString() == "Dispatchly.Abstractions"
                 && attribute.ConstructorArguments.Length == 1
                 && attribute.ConstructorArguments[0].Value is string configured)
             {

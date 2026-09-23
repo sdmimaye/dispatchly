@@ -1,6 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Dispatchly;
+namespace Dispatchly.Core;
 
 /// <summary>Creates a dependency-injection scope for each delivery.</summary>
 public sealed class MessageDispatcher : IMessageDispatcher

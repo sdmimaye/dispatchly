@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace Dispatchly;
+namespace Dispatchly.Transport.PostgreSql;
 
 internal static class NotificationPayload
 {

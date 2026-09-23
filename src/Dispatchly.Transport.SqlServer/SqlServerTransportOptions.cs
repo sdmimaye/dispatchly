@@ -1,4 +1,4 @@
-namespace Dispatchly;
+namespace Dispatchly.Transport.SqlServer;
 
 /// <summary>Options for the SQL Server transport.</summary>
 public sealed class SqlServerTransportOptions

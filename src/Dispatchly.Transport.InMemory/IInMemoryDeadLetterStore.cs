@@ -1,4 +1,4 @@
-namespace Dispatchly;
+namespace Dispatchly.Transport.InMemory;
 
 /// <summary>In-process dead letters. They disappear when the process exits.</summary>
 public interface IInMemoryDeadLetterStore

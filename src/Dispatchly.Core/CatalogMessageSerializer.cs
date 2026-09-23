@@ -1,4 +1,4 @@
-namespace Dispatchly;
+namespace Dispatchly.Core;
 
 /// <summary>Serializer backed by the message catalog.</summary>
 public sealed class CatalogMessageSerializer : IMessageSerializer

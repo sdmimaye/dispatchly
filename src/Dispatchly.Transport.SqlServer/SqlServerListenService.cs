@@ -4,7 +4,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace Dispatchly;
+namespace Dispatchly.Transport.SqlServer;
 
 internal sealed class SqlServerListenService : IHostedService
 {

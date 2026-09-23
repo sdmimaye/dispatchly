@@ -1,4 +1,6 @@
-using Dispatchly;
+using Dispatchly.Abstractions;
+using Dispatchly.DependencyInjection;
+using Dispatchly.Transport.PostgreSql;
 using Dispatchly.Sample.Aspire.Contracts;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

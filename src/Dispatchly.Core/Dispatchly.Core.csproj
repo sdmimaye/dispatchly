@@ -1,6 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <RootNamespace>Dispatchly</RootNamespace>
     <Description>Dispatcher and message catalog for Dispatchly.</Description>
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>

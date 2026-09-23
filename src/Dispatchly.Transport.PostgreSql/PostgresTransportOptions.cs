@@ -1,4 +1,4 @@
-namespace Dispatchly;
+namespace Dispatchly.Transport.PostgreSql;
 
 /// <summary>Options for the PostgreSQL transport.</summary>
 public sealed class PostgresTransportOptions

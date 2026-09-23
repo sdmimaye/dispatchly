@@ -1,4 +1,4 @@
-namespace Dispatchly;
+namespace Dispatchly.Core;
 
 /// <summary>Runs registered message behaviors around the handler invocation.</summary>
 internal sealed class MessagePipeline

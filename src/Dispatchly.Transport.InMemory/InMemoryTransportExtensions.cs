@@ -1,13 +1,14 @@
 using System.Threading.Channels;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Dispatchly;
+namespace Dispatchly.Transport.InMemory;
 
 /// <summary>Registers the in-memory transport.</summary>
 public static class InMemoryTransportExtensions
 {
     /// <summary>
     /// Uses a process-local queue. <see cref="IMessagePublisher.PublishAsync{TMessage}" /> enqueues immediately.
+    /// <see cref="IMessageOutbox.EnlistAsync{TMessage}" /> throws because this transport has no database transaction.
     /// Messages still in the queue are lost when the process exits.
     /// </summary>
     public static DispatchlyBuilder UseInMemoryTransport(
@@ -31,6 +32,7 @@ public static class InMemoryTransportExtensions
         builder.Services.AddSingleton(deadLetters);
         builder.Services.AddSingleton<IInMemoryDeadLetterStore>(deadLetters);
         builder.Services.AddSingleton<IMessagePublisher, InMemoryMessagePublisher>();
+        builder.Services.AddSingleton<IMessageOutbox, InMemoryMessageOutbox>();
         builder.Services.AddHostedService<InMemoryDeliveryService>();
         return builder;
     }

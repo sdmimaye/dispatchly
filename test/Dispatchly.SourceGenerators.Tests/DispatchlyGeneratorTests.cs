@@ -1,5 +1,8 @@
+using Dispatchly.Abstractions;
+using Dispatchly.Core;
 using Dispatchly.DependencyInjection;
 using Dispatchly.SourceGenerators;
+using Dispatchly.Transport.InMemory;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.Extensions.DependencyInjection;
@@ -32,7 +35,7 @@ public class DispatchlyGeneratorTests
     public void Emit_WritesHandlerRegistrationAndJsonContext()
     {
         var source = """
-            using Dispatchly;
+            using Dispatchly.Abstractions;
             namespace Sample;
             [DispatchlyTable("placed_orders")]
             public sealed record OrderPlaced(string OrderId);

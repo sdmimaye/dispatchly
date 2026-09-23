@@ -1,4 +1,4 @@
-namespace Dispatchly;
+namespace Dispatchly.Transport.PostgreSql;
 
 internal static class PostgresSql
 {

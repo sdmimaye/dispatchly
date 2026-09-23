@@ -1,4 +1,4 @@
-namespace Dispatchly;
+namespace Dispatchly.Abstractions;
 
 /// <summary>Handles one message type. Implementations must be idempotent.</summary>
 public interface IMessageHandler<TMessage>

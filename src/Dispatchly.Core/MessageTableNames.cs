@@ -1,7 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 
-namespace Dispatchly;
+namespace Dispatchly.Core;
 
 /// <summary>Resolves the PostgreSQL table name for a message type.</summary>
 public static class MessageTableNames

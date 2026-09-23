@@ -2,7 +2,7 @@ using System.Data;
 using System.Data.Common;
 using Microsoft.Data.SqlClient;
 
-namespace Dispatchly;
+namespace Dispatchly.Transport.SqlServer;
 
 internal sealed class SqlServerIdempotencyStore : IIdempotencyStore
 {

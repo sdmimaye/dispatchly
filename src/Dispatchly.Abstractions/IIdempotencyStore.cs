@@ -1,4 +1,4 @@
-namespace Dispatchly;
+namespace Dispatchly.Abstractions;
 
 /// <summary>Remembers message identifiers that have already been handled.</summary>
 public interface IIdempotencyStore

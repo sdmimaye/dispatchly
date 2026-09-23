@@ -2,7 +2,7 @@
 
 Open-source outbox messaging library for .NET. One host registers messages and handlers, then delivers them through a single interchangeable transport.
 
-This is not the modular-monolith application stack. Do not add a web UI, Identity, EF Core, or DispatchR. Do not add Aspire outside `samples/Aspire`.
+This is not the modular-monolith application stack. Do not add a web UI, Identity, or DispatchR. Do not add Aspire outside `samples/Aspire`. EF Core is allowed only in `Dispatchly.EntityFrameworkCore`, `Dispatchly.EntityFrameworkCore.Tests`, and `samples/EntityFrameworkCore`.
 
 ## Layout
 
@@ -14,8 +14,9 @@ This is not the modular-monolith application stack. Do not add a web UI, Identit
 - `src/Dispatchly.Transport.InMemory` — volatile in-process transport
 - `src/Dispatchly.Transport.PostgreSql` — durable transport (`LISTEN` / `NOTIFY`, `pg_cron`)
 - `src/Dispatchly.Transport.SqlServer` — durable transport (Service Broker `WAITFOR (RECEIVE)`, SQL Server Agent)
+- `src/Dispatchly.EntityFrameworkCore` — enlists `IDomainEventSource` events on the `SaveChanges` transaction
 - `test/` — xUnit v3 projects
-- `samples/` — runnable registration, transport, and Aspire demonstrations
+- `samples/` — runnable registration, transport, EF Core domain-event, and Aspire demonstrations
 - `docs/plan/` — specs that have not shipped
 
 ## Rules
@@ -25,6 +26,7 @@ This is not the modular-monolith application stack. Do not add a web UI, Identit
 - Assert with xUnit `Assert.*`. Do not add FluentAssertions.
 - PostgreSQL integration tests belong in `Dispatchly.Transport.PostgreSql.Tests` and use Testcontainers.
 - SQL Server integration tests belong in `Dispatchly.Transport.SqlServer.Tests` and use Testcontainers.
+- Entity Framework integration tests belong in `Dispatchly.EntityFrameworkCore.Tests` and use Testcontainers.
 - Only one transport may be registered.
 - Handlers must be idempotent. PostgreSQL and SQL Server delivery are at-least-once. In-memory delivery is lost on process exit. `UsePostgresIdempotency` and `UseSqlServerIdempotency` commit handler writes made on the delivery `DbTransaction` together with the message id.
 - Do not add `Co-authored-by` trailers to commits.

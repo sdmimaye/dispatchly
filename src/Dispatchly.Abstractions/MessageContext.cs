@@ -1,6 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 
-namespace Dispatchly;
+namespace Dispatchly.Abstractions;
 
 /// <summary>Delivery metadata passed to a handler and to message behaviors.</summary>
 public sealed class MessageContext

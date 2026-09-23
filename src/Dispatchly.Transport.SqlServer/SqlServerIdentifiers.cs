@@ -1,4 +1,4 @@
-namespace Dispatchly;
+namespace Dispatchly.Transport.SqlServer;
 
 internal static class SqlServerIdentifiers
 {

@@ -1,4 +1,4 @@
-namespace Dispatchly;
+namespace Dispatchly.Core;
 
 /// <summary>Mutable catalog populated while handlers are registered.</summary>
 public sealed class MessageTypeCatalog : IMessageTypeCatalog

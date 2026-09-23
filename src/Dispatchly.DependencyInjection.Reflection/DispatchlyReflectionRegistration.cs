@@ -1,7 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 
-namespace Dispatchly;
+namespace Dispatchly.DependencyInjection.Reflection;
 
 /// <summary>Registers handlers discovered by scanning assemblies.</summary>
 public static class DispatchlyReflectionRegistration

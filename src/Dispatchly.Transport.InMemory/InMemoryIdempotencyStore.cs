@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using System.Data.Common;
 
-namespace Dispatchly;
+namespace Dispatchly.Transport.InMemory;
 
 internal sealed class InMemoryIdempotencyStore : IIdempotencyStore
 {

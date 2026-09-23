@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace Dispatchly;
+namespace Dispatchly.Transport.InMemory;
 
 internal sealed class InMemoryDeadLetterStore : IInMemoryDeadLetterStore
 {

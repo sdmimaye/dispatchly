@@ -3,7 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace Dispatchly;
+namespace Dispatchly.Core;
 
 /// <summary>Validates PostgreSQL identifiers used by Dispatchly.</summary>
 public static partial class IdentifierRules

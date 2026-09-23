@@ -1,4 +1,4 @@
-namespace Dispatchly;
+namespace Dispatchly.Core;
 
 /// <summary>Serializes registered message types.</summary>
 public interface IMessageSerializer

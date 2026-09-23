@@ -1,6 +1,6 @@
 using System.Data.Common;
 
-namespace Dispatchly;
+namespace Dispatchly.Abstractions;
 
 /// <summary>
 /// Holds an in-progress idempotency record until <see cref="CommitAsync" />.

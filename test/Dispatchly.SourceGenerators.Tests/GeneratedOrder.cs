@@ -1,3 +1,5 @@
+using Dispatchly.Abstractions;
+
 namespace Dispatchly.SourceGenerators.Tests;
 
 public sealed record GeneratedOrder(string OrderId, int Quantity);

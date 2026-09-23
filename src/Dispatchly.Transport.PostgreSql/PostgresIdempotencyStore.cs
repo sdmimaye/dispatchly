@@ -1,7 +1,7 @@
 using System.Data.Common;
 using Npgsql;
 
-namespace Dispatchly;
+namespace Dispatchly.Transport.PostgreSql;
 
 internal sealed class PostgresIdempotencyStore : IIdempotencyStore
 {

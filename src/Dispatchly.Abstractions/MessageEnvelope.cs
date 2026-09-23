@@ -1,4 +1,4 @@
-namespace Dispatchly;
+namespace Dispatchly.Abstractions;
 
 /// <summary>One delivery moving through the message pipeline.</summary>
 public sealed class MessageEnvelope

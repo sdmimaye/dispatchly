@@ -1,4 +1,4 @@
-namespace Dispatchly;
+namespace Dispatchly.Transport.SqlServer;
 
 /// <summary>Runs the SQL Server redelivery procedure that SQL Server Agent would call.</summary>
 public interface ISqlServerMaintenance

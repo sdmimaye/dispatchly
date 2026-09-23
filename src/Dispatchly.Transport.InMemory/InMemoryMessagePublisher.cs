@@ -1,6 +1,6 @@
 using System.Threading.Channels;
 
-namespace Dispatchly;
+namespace Dispatchly.Transport.InMemory;
 
 internal sealed class InMemoryMessagePublisher : IMessagePublisher
 {

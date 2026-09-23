@@ -1,6 +1,6 @@
 using Npgsql;
 
-namespace Dispatchly;
+namespace Dispatchly.Transport.PostgreSql;
 
 internal sealed class PostgresMessagePublisher : IMessagePublisher
 {

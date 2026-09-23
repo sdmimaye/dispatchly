@@ -1,4 +1,4 @@
-namespace Dispatchly;
+namespace Dispatchly.Transport.InMemory;
 
 /// <summary>A message the in-memory transport gave up on.</summary>
 public sealed record InMemoryDeadLetter(
