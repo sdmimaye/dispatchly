@@ -19,6 +19,7 @@ public class IdentifierRulesTests
     {
         var exception = Assert.Throws<ArgumentException>(() => IdentifierRules.ValidateTable("outbox_table"));
         Assert.Contains("reserved", exception.Message, StringComparison.Ordinal);
+        Assert.Throws<ArgumentException>(() => IdentifierRules.ValidateTable(IdentifierRules.IdempotencyInboxTable));
     }
 
     [Fact]

@@ -34,4 +34,21 @@ public static class InMemoryTransportExtensions
         builder.Services.AddHostedService<InMemoryDeliveryService>();
         return builder;
     }
+
+    /// <summary>
+    /// Skips a second in-process delivery of the same <see cref="MessageId" />.
+    /// The record is lost when the process exits, together with any queued messages.
+    /// Call this after <see cref="UseInMemoryTransport" />.
+    /// </summary>
+    public static DispatchlyBuilder UseInMemoryIdempotency(this DispatchlyBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        if (!string.Equals(builder.TransportName, "InMemory", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Call UseInMemoryTransport before UseInMemoryIdempotency.");
+        }
+
+        builder.Services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
+        return builder.UseBehavior<IdempotencyBehavior>();
+    }
 }

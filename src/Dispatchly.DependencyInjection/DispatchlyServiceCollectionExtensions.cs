@@ -25,6 +25,8 @@ public static class DispatchlyServiceCollectionExtensions
         services.AddSingleton<IMessageTypeCatalog>(catalog);
         services.AddSingleton<IMessageSerializer, CatalogMessageSerializer>();
         services.AddSingleton(builder);
+        services.AddSingleton(static provider =>
+            new MessagePipeline(provider.GetRequiredService<DispatchlyBuilder>().BehaviorFactories.ToArray()));
         services.AddSingleton<IMessageDispatcher, MessageDispatcher>();
         return builder;
     }

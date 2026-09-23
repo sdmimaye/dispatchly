@@ -30,4 +30,37 @@ public static class PostgresTransportExtensions
         builder.Services.AddHostedService<PostgresListenService>();
         return builder;
     }
+
+    /// <summary>
+    /// Skips a handler when its <see cref="MessageId" /> is already in <c>idempotency_inbox</c>.
+    /// The inbox row and handler writes that use <see cref="MessageContext.GetRequiredFeature{TFeature}" />
+    /// of <see cref="System.Data.Common.DbTransaction" /> commit together.
+    /// Call this after <see cref="UsePostgresTransport" />.
+    /// </summary>
+    public static DispatchlyBuilder UsePostgresIdempotency(this DispatchlyBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        if (!string.Equals(builder.TransportName, "PostgreSQL", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Call UsePostgresTransport before UsePostgresIdempotency.");
+        }
+
+        RequireOptions(builder).IdempotencyEnabled = true;
+        builder.Services.AddSingleton<IIdempotencyStore, PostgresIdempotencyStore>();
+        return builder.UseBehavior<IdempotencyBehavior>();
+    }
+
+    private static PostgresTransportOptions RequireOptions(DispatchlyBuilder builder)
+    {
+        foreach (var descriptor in builder.Services)
+        {
+            if (descriptor.ServiceType == typeof(PostgresTransportOptions)
+                && descriptor.ImplementationInstance is PostgresTransportOptions options)
+            {
+                return options;
+            }
+        }
+
+        throw new InvalidOperationException("Call UsePostgresTransport before UsePostgresIdempotency.");
+    }
 }

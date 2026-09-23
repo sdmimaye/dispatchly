@@ -50,6 +50,44 @@ public class InMemoryTransportTests
     }
 
     [Fact]
+    public async Task Idempotency_SecondDispatchOfTheSameIdDoesNotRunTheHandler()
+    {
+        var probe = new CountingProbe { SucceedOnAttempt = 1 };
+        using var host = await StartAsync(probe, options => options.RetryDelay = TimeSpan.Zero, idempotency: true);
+        var dispatcher = host.Services.GetRequiredService<IMessageDispatcher>();
+        var context = new MessageContext(MessageId.New(), 1, DateTimeOffset.UtcNow);
+
+        await dispatcher.DispatchAsync(typeof(MemoryPing), """{"name":"one"}""", context, CancellationToken.None);
+        await dispatcher.DispatchAsync(typeof(MemoryPing), """{"name":"one"}""", context, CancellationToken.None);
+
+        Assert.Equal([1], probe.Attempts);
+    }
+
+    [Fact]
+    public async Task Idempotency_AFailedDeliveryCanBeRetried()
+    {
+        var probe = new CountingProbe { SucceedOnAttempt = 2 };
+        using var host = await StartAsync(probe, options => options.RetryDelay = TimeSpan.Zero, idempotency: true);
+        var dispatcher = host.Services.GetRequiredService<IMessageDispatcher>();
+        var context = new MessageContext(MessageId.New(), 1, DateTimeOffset.UtcNow);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            dispatcher.DispatchAsync(typeof(MemoryPing), """{"name":"one"}""", context, CancellationToken.None));
+        await dispatcher.DispatchAsync(typeof(MemoryPing), """{"name":"one"}""", context, CancellationToken.None);
+
+        Assert.Equal([1, 1], probe.Attempts);
+    }
+
+    [Fact]
+    public void UseInMemoryIdempotency_RequiresTheTransport()
+    {
+        var services = new ServiceCollection();
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            services.AddDispatchly().UseInMemoryIdempotency());
+        Assert.Contains("UseInMemoryTransport", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void UseInMemoryTransport_RejectsASecondTransport()
     {
         var services = new ServiceCollection();
@@ -59,13 +97,21 @@ public class InMemoryTransportTests
         Assert.Contains("already registered", exception.Message, StringComparison.Ordinal);
     }
 
-    private static async Task<IHost> StartAsync(CountingProbe probe, Action<InMemoryTransportOptions> configure)
+    private static async Task<IHost> StartAsync(
+        CountingProbe probe,
+        Action<InMemoryTransportOptions> configure,
+        bool idempotency = false)
     {
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddSingleton(probe);
-        builder.Services.AddDispatchly()
+        var dispatchly = builder.Services.AddDispatchly()
             .AddHandler<MemoryPing, MemoryPingHandler>()
             .UseInMemoryTransport(configure);
+        if (idempotency)
+        {
+            dispatchly.UseInMemoryIdempotency();
+        }
+
         var host = builder.Build();
         await host.StartAsync();
         return host;

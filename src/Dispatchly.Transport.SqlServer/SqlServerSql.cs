@@ -302,6 +302,20 @@ internal static class SqlServerSql
             """;
     }
 
+    public static string CreateIdempotencyInbox(SqlServerTransportOptions options)
+    {
+        var table = IdentifierRules.IdempotencyInboxTable;
+        var qualified = Qualify(options.Schema, table);
+        var objectId = "N'" + SqlServerIdentifiers.Quote(options.Schema) + "." + SqlServerIdentifiers.Quote(table) + "'";
+        return $"""
+            IF OBJECT_ID({objectId}, N'U') IS NULL
+                CREATE TABLE {qualified} (
+                    id uniqueidentifier NOT NULL PRIMARY KEY,
+                    completed_at datetimeoffset NOT NULL
+                );
+            """;
+    }
+
     public static string Insert(SqlServerTransportOptions options, string table) => $"""
         INSERT INTO {Qualify(options.Schema, table)} (id, payload)
         VALUES (@id, @payload);

@@ -33,6 +33,12 @@ public sealed class MessageDispatcher : IMessageDispatcher
             ?? throw new InvalidOperationException($"Message '{messageType.FullName}' deserialized to null.");
 
         await using var scope = _scopeFactory.CreateAsyncScope();
-        await registration.Dispatch(scope.ServiceProvider, message, context, cancellationToken).ConfigureAwait(false);
+        var pipeline = scope.ServiceProvider.GetRequiredService<MessagePipeline>();
+        var envelope = new MessageEnvelope(message, messageType, context, scope.ServiceProvider);
+        await pipeline.InvokeAsync(
+            scope.ServiceProvider,
+            envelope,
+            (current, token) => registration.Dispatch(current.Services, current.Message, current.Context, token),
+            cancellationToken).ConfigureAwait(false);
     }
 }

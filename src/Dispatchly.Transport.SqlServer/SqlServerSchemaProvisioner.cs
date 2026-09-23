@@ -25,6 +25,12 @@ internal sealed class SqlServerSchemaProvisioner
                 EXEC(N'CREATE SCHEMA {SqlServerIdentifiers.Quote(_options.Schema)}');
             """,
             cancellationToken).ConfigureAwait(false);
+        if (_options.IdempotencyEnabled)
+        {
+            await ExecuteAsync(connection, SqlServerSql.CreateIdempotencyInbox(_options), cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         await ExecuteAsync(connection, SqlServerSql.CreateRegistry(_options), cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(connection, SqlServerSql.EnsureMessageType(_options), cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(connection, SqlServerSql.EnsureContract(_options), cancellationToken).ConfigureAwait(false);
