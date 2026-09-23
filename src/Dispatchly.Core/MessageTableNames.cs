@@ -7,10 +7,11 @@ namespace Dispatchly.Core;
 public static class MessageTableNames
 {
     /// <summary>
-    /// Resolves a table name from <paramref name="messageType" />, including <see cref="DispatchlyTableAttribute" />.
+    /// Resolves a table name from <paramref name="messageType" />.
+    /// <see cref="DispatchlyTableAttribute" /> wins over <paramref name="naming" />.
     /// </summary>
     [RequiresUnreferencedCode("Reading DispatchlyTableAttribute uses reflection.")]
-    public static string FromType(Type messageType)
+    public static string FromType(Type messageType, TableNaming naming = TableNaming.SnakeCase)
     {
         ArgumentNullException.ThrowIfNull(messageType);
         var attribute = messageType.GetCustomAttribute<DispatchlyTableAttribute>();
@@ -19,6 +20,6 @@ public static class MessageTableNames
             return IdentifierRules.ValidateTable(attribute.TableName);
         }
 
-        return IdentifierRules.FromClrName(messageType.Name);
+        return IdentifierRules.FromClrName(messageType.Name, naming);
     }
 }

@@ -65,6 +65,40 @@ public class DispatchlyBuilderTests
     }
 
     [Fact]
+    public void UseTableNaming_PascalCase_UsesTheTypeName()
+    {
+        var services = new ServiceCollection();
+        services.AddDispatchly()
+            .UseTableNaming(TableNaming.PascalCase)
+            .AddHandler<ManualPing, ManualPingHandler>(ManualPingContext.Default.ManualPing);
+        using var provider = services.BuildServiceProvider();
+        var registration = provider.GetRequiredService<IMessageTypeCatalog>().GetRequired(typeof(ManualPing));
+        Assert.Equal("ManualPing", registration.TableName);
+    }
+
+    [Fact]
+    public void UseTableNaming_PascalCase_StillHonorsTableAttribute()
+    {
+        var services = new ServiceCollection();
+        services.AddDispatchly()
+            .UseTableNaming(TableNaming.PascalCase)
+            .AddHandler<AttributedPing, AttributedPingHandler>();
+        using var provider = services.BuildServiceProvider();
+        var registration = provider.GetRequiredService<IMessageTypeCatalog>().GetRequired(typeof(AttributedPing));
+        Assert.Equal("named_ping", registration.TableName);
+    }
+
+    [Fact]
+    public void UseTableNaming_AfterRegistration_Throws()
+    {
+        var services = new ServiceCollection();
+        var builder = services.AddDispatchly()
+            .AddHandler<ManualPing, ManualPingHandler>(ManualPingContext.Default.ManualPing, "manual_ping");
+        var exception = Assert.Throws<InvalidOperationException>(() => builder.UseTableNaming(TableNaming.PascalCase));
+        Assert.Contains("before", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AddDispatchly_IsIdempotent()
     {
         var services = new ServiceCollection();
