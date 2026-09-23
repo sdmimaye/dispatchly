@@ -1,3 +1,5 @@
+using System.Data;
+using System.Data.Common;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -79,6 +81,23 @@ public class InMemoryTransportTests
     }
 
     [Fact]
+    public async Task EnlistAsync_ThrowsBecauseThereIsNoDatabaseTransaction()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddDispatchly()
+            .AddMessage<MemoryPing>()
+            .UseInMemoryTransport();
+        using var host = builder.Build();
+        await host.StartAsync();
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(() =>
+            host.Services.GetRequiredService<IMessageOutbox>()
+                .EnlistAsync(new MemoryPing("x"), new UnrelatedTransaction(), CancellationToken.None)
+                .AsTask());
+        Assert.Contains("in-memory", exception.Message, StringComparison.OrdinalIgnoreCase);
+        await host.StopAsync();
+    }
+
+    [Fact]
     public void UseInMemoryIdempotency_RequiresTheTransport()
     {
         var services = new ServiceCollection();
@@ -131,6 +150,21 @@ public class InMemoryTransportTests
             }
 
             await Task.Delay(15);
+        }
+    }
+
+    private sealed class UnrelatedTransaction : DbTransaction
+    {
+        public override IsolationLevel IsolationLevel => IsolationLevel.Unspecified;
+
+        protected override DbConnection? DbConnection => null;
+
+        public override void Commit()
+        {
+        }
+
+        public override void Rollback()
+        {
         }
     }
 

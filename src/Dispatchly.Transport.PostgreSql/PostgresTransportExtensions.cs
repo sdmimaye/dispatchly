@@ -1,14 +1,16 @@
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
-namespace Dispatchly;
+namespace Dispatchly.Transport.PostgreSql;
 
 /// <summary>Registers the PostgreSQL transport.</summary>
 public static class PostgresTransportExtensions
 {
     /// <summary>
     /// Uses PostgreSQL as the durable outbox. <see cref="IMessagePublisher.PublishAsync{TMessage}" />
-    /// inserts and commits the row before it returns. The host listens for <c>NOTIFY</c> and does not poll.
+    /// inserts and commits the row before it returns. <see cref="IMessageOutbox.EnlistAsync{TMessage}" />
+    /// inserts on a caller-supplied <c>NpgsqlTransaction</c> and leaves that transaction uncommitted.
+    /// The host listens for <c>NOTIFY</c> and does not poll.
     /// </summary>
     public static DispatchlyBuilder UsePostgresTransport(
         this DispatchlyBuilder builder,
@@ -27,6 +29,7 @@ public static class PostgresTransportExtensions
         builder.Services.AddSingleton<PostgresSchemaProvisioner>();
         builder.Services.AddSingleton<IPostgresMaintenance, PostgresMaintenance>();
         builder.Services.AddSingleton<IMessagePublisher, PostgresMessagePublisher>();
+        builder.Services.AddSingleton<IMessageOutbox, PostgresMessageOutbox>();
         builder.Services.AddHostedService<PostgresListenService>();
         return builder;
     }

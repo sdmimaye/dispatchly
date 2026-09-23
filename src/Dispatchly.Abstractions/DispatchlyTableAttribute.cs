@@ -1,4 +1,4 @@
-namespace Dispatchly;
+namespace Dispatchly.Abstractions;
 
 /// <summary>Overrides the PostgreSQL table name for a message type.</summary>
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct, AllowMultiple = false, Inherited = false)]

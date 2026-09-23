@@ -5,12 +5,13 @@ alwaysApply: true
 
 # Dispatchly
 
-Open-source outbox messaging library. Do not add Blazor, MudBlazor, Identity, EF Core, DispatchR, or a web host. Aspire belongs only in `samples/Aspire`.
+Open-source outbox messaging library. Do not add Blazor, MudBlazor, Identity, DispatchR, or a web host. Aspire belongs only in `samples/Aspire`. EF Core belongs only in `Dispatchly.EntityFrameworkCore`, `Dispatchly.EntityFrameworkCore.Tests`, and `samples/EntityFrameworkCore`.
 
 - `net10.0`, central package management, nullable, warnings as errors
 - xUnit v3 with `Assert.*`. Do not add FluentAssertions
 - PostgreSQL tests use Testcontainers and live in `Dispatchly.Transport.PostgreSql.Tests`
 - SQL Server tests use Testcontainers and live in `Dispatchly.Transport.SqlServer.Tests`
+- Entity Framework tests use Testcontainers and live in `Dispatchly.EntityFrameworkCore.Tests`
 - Public async methods take `CancellationToken` last
 - Register one transport per host
 - Delivery is at-least-once. Handlers must be idempotent. Durable idempotency commits handler writes on the delivery transaction with the message id

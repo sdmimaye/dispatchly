@@ -1,4 +1,4 @@
-namespace Dispatchly;
+namespace Dispatchly.Abstractions;
 
 /// <summary>Enqueues a message on the registered transport.</summary>
 public interface IMessagePublisher

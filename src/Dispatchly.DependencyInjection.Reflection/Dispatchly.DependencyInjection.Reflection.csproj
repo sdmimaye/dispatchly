@@ -1,6 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <RootNamespace>Dispatchly</RootNamespace>
     <Description>Reflection-based handler discovery for Dispatchly. Not an AOT path.</Description>
     <IsAotCompatible>false</IsAotCompatible>
   </PropertyGroup>

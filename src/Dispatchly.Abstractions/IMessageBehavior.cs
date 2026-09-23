@@ -1,4 +1,4 @@
-namespace Dispatchly;
+namespace Dispatchly.Abstractions;
 
 /// <summary>Continues the message pipeline.</summary>
 public delegate Task MessagePipelineDelegate(MessageEnvelope envelope, CancellationToken cancellationToken);

@@ -50,7 +50,7 @@ internal static class HandlerCollector
         {
             if (implemented.Name != "IMessageHandler"
                 || implemented.TypeArguments.Length != 1
-                || implemented.ContainingNamespace.ToDisplayString() != "Dispatchly")
+                || implemented.ContainingNamespace.ToDisplayString() != "Dispatchly.Abstractions")
             {
                 continue;
             }

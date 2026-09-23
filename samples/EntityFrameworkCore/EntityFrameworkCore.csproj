@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Dispatchly.EntityFrameworkCore/Dispatchly.EntityFrameworkCore.csproj" />
+    <ProjectReference Include="../../src/Dispatchly.Transport.PostgreSql/Dispatchly.Transport.PostgreSql.csproj" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+  </ItemGroup>
+</Project>

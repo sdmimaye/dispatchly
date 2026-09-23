@@ -1,7 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Dispatchly;
+namespace Dispatchly.DependencyInjection;
 
 /// <summary>Collects handler registrations and the chosen transport.</summary>
 public sealed class DispatchlyBuilder

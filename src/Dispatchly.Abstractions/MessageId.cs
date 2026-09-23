@@ -1,4 +1,4 @@
-namespace Dispatchly;
+namespace Dispatchly.Abstractions;
 
 /// <summary>Identifier assigned when a message is published.</summary>
 public readonly record struct MessageId(Guid Value)

@@ -3,7 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
-namespace Dispatchly;
+namespace Dispatchly.Transport.PostgreSql;
 
 internal sealed class PostgresListenService : IHostedService
 {

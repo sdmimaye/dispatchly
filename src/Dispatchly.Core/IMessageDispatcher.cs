@@ -1,4 +1,4 @@
-namespace Dispatchly;
+namespace Dispatchly.Core;
 
 /// <summary>Delivers a serialized message to its handlers.</summary>
 public interface IMessageDispatcher

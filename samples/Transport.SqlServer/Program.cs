@@ -1,4 +1,6 @@
-using Dispatchly;
+using Dispatchly.Abstractions;
+using Dispatchly.DependencyInjection;
+using Dispatchly.Transport.SqlServer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;

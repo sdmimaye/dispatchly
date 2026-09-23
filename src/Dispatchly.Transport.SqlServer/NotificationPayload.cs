@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace Dispatchly;
+namespace Dispatchly.Transport.SqlServer;
 
 internal static class NotificationPayload
 {

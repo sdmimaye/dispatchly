@@ -1,6 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <RootNamespace>Dispatchly</RootNamespace>
     <Description>Durable SQL Server outbox transport for Dispatchly.</Description>
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>

@@ -1,6 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Dispatchly;
+namespace Dispatchly.DependencyInjection;
 
 /// <summary>Registers the Dispatchly core services.</summary>
 public static class DispatchlyServiceCollectionExtensions

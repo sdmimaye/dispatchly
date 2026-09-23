@@ -2,7 +2,7 @@ using System.Threading.Channels;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace Dispatchly;
+namespace Dispatchly.Transport.InMemory;
 
 internal sealed class InMemoryDeliveryService : BackgroundService
 {

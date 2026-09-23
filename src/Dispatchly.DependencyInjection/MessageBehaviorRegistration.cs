@@ -1,7 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Dispatchly;
+namespace Dispatchly.DependencyInjection;
 
 /// <summary>Registers message pipeline behaviors.</summary>
 public static class MessageBehaviorRegistration

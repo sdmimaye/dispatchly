@@ -3,7 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Dispatchly;
+namespace Dispatchly.DependencyInjection;
 
 /// <summary>Registers message handlers on a <see cref="DispatchlyBuilder" />.</summary>
 public static class DispatchlyHandlerRegistration

@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Entity Framework Core adapter that enlists domain events on the Dispatchly outbox transaction.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Dispatchly.Abstractions/Dispatchly.Abstractions.csproj" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+</Project>

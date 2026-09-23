@@ -1,6 +1,6 @@
 # Dispatchly
 
-Status: initial outbox transports shipped (in-memory, PostgreSQL, and SQL Server).
+Status: initial outbox transports shipped (in-memory, PostgreSQL, and SQL Server), plus EF Core domain-event enlistment.
 
 Dispatchly is an outbox messaging library for .NET. Enqueue a message through `IMessagePublisher`, then deliver it to an in-process handler at least once.
 
@@ -18,6 +18,7 @@ PostgreSQL and SQL Server are the durable transports. The in-memory transport ke
 | `Dispatchly.Transport.InMemory` | Volatile in-process queue |
 | `Dispatchly.Transport.PostgreSql` | Durable outbox using `LISTEN` / `NOTIFY` |
 | `Dispatchly.Transport.SqlServer` | Durable outbox using Service Broker `WAITFOR (RECEIVE)` |
+| `Dispatchly.EntityFrameworkCore` | Enlists `IDomainEventSource` events on the `SaveChanges` transaction |
 
 Register one transport. A second `Use*Transport` call throws.
 
@@ -32,6 +33,30 @@ The PostgreSQL transport inserts and commits the row inside `IMessagePublisher.P
 The SQL Server transport uses the same outbox tables and claim rules. The insert trigger `SEND`s a Service Broker message after the commit, and the host blocks in `WAITFOR (RECEIVE)`. It does not poll. Each handled message type has its own queue, so a publish-only registration does not consume another host's wake-up. Messages stay in the queue until received, including messages published while the process is down. SQL Server Agent runs `redeliver_undelivered` for rows whose visibility lock has expired. Set `SqlServerTransportOptions.ScheduleRedelivery` to false when Agent is not running, and call `ISqlServerMaintenance.RedeliverAsync` from your own scheduler. If scheduling is left on and Agent is stopped, startup throws. Azure SQL Database has no Service Broker, so this transport cannot run there.
 
 The in-memory transport enqueues inside `IMessagePublisher.PublishAsync`. Anything still queued is lost when the process exits, including messages whose handlers have not finished.
+
+## Domain events
+
+An aggregate extends `Dispatchly.Abstractions.DomainEventSource`, or implements `IDomainEventSource` when it already has a base class. Each event object is a registered message. There is no mapping to a different type. `Dispatchly.EntityFrameworkCore.UseDispatchlyOutbox` enlists those events on the `SaveChanges` transaction through `IMessageOutbox`. The interceptor clears them after that transaction commits. A failed save or a rollback leaves them on the aggregate.
+
+The context uses the same database as the transport, and the host is started so the outbox tables and triggers exist. When the save has no transaction, the interceptor begins one and commits it after the save. That save runs outside a retrying execution strategy. The in-memory transport cannot enlist on a database transaction.
+
+```csharp
+using Dispatchly.Abstractions;
+using Dispatchly.EntityFrameworkCore;
+
+public sealed class Order : DomainEventSource
+{
+    public string Number { get; set; } = "";
+
+    public void Place() => Raise(new OrderPlaced(Number));
+}
+
+services.AddDbContext<OrdersDbContext>((sp, options) =>
+{
+    options.UseNpgsql(connectionString);
+    options.UseDispatchlyOutbox(sp);
+});
+```
 
 ## Registration
 
@@ -126,6 +151,7 @@ PostgreSQL and SQL Server tests use Testcontainers and need Docker. The SQL Serv
 | `samples/Transport.InMemory` | In-memory transport |
 | `samples/Transport.PostgreSql` | PostgreSQL transport through `IMessagePublisher` |
 | `samples/Transport.SqlServer` | SQL Server transport through `IMessagePublisher` |
+| `samples/EntityFrameworkCore` | Domain events enlisted on the `SaveChanges` transaction |
 | `samples/Aspire` | Checkout publishes and Shipping handles through one PostgreSQL database |
 
 Registration and in-memory samples:
@@ -147,6 +173,13 @@ SQL Server sample. `ScheduleRedelivery` is off, so SQL Server Agent is not requi
 ```bash
 DISPATCHLY_SQLSERVER="Server=localhost;Database=dispatchly;User Id=sa;Password=your-password;TrustServerCertificate=True" \
   dotnet run --project samples/Transport.SqlServer
+```
+
+Entity Framework sample. The host must be able to create the `orders` table. `ScheduleRedelivery` is off, so the database does not need `pg_cron`. `SaveChanges` commits the order and `OrderPlaced` together, and this process delivers the event.
+
+```bash
+DISPATCHLY_POSTGRES="Host=localhost;Username=postgres;Password=postgres;Database=dispatchly" \
+  dotnet run --project samples/EntityFrameworkCore
 ```
 
 Aspire sample. Docker is required. Checkout calls `AddMessage` and Shipping calls `AddHandler` for the same `OrderPlaced` contract. The stock PostgreSQL container has no `pg_cron`, so both apps leave redelivery scheduling off. Shipping calls `IPostgresMaintenance.RedeliverAsync` once after it starts listening.
