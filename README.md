@@ -84,6 +84,14 @@ services.AddDispatchly()
 
 The reflection overload `AddHandler<TMessage, THandler>()` and `AddHandlersFromAssemblies` use reflection-based JSON and honor `[DispatchlyTable("table_name")]`. They are not trimming or AOT compatible.
 
+`UseTableNaming` chooses the name when neither `[DispatchlyTable]` nor a `tableName` argument is set. The default is `TableNaming.SnakeCase` (`OrderPlaced` becomes `order_placed`). `TableNaming.PascalCase` keeps the type name. Call it before registering messages.
+
+```csharp
+services.AddDispatchly()
+    .UseTableNaming(TableNaming.PascalCase)
+    .AddHandlersFromAssemblies(typeof(OrderPlacedHandler).Assembly);
+```
+
 `AddMessage<TMessage>(jsonTypeInfo)` registers a type for publishing without a handler. A PostgreSQL listener in that process does not claim it, and a SQL Server host does not receive on that type's queue, so another host can deliver it. The in-memory transport rejects that publish, because it can only deliver inside the current process.
 
 The source generator finds public `IMessageHandler<T>` implementations and emits `AddDispatchlyGeneratedHandlers` plus a `JsonSerializerContext`. Reference `Dispatchly.SourceGenerators` as an analyzer, then:
@@ -115,7 +123,7 @@ A different store can implement `IIdempotencyStore` and be registered with `UseB
 
 ## Outbox layout
 
-Each message type gets `{schema}.{table}` and `{schema}.{table}_dead_letter`. The default schema is `dispatchly`. Table names are snake_case unless `[DispatchlyTable]` or the `tableName` argument says otherwise. SQL Server also creates `{schema}.{table}_queue` and a Service Broker service pair for that table.
+Each message type gets `{schema}.{table}` and `{schema}.{table}_dead_letter`. The default schema is `dispatchly`. When no table is specified, `UseTableNaming` derives it. The default, `TableNaming.SnakeCase`, turns `OrderPlaced` into `order_placed`. `TableNaming.PascalCase` keeps `OrderPlaced`. `[DispatchlyTable]` and the `tableName` argument override the strategy. SQL Server also creates `{schema}.{table}_queue` and a Service Broker service pair for that table.
 
 A claim increments `attempt_count` and sets `locked_until`. Success sets `delivered_at` only when the attempt still matches. Failure stores `last_error` and backs off. When the attempt reaches `MaxAttempts`, the row moves to that type's dead-letter table. Delivered rows are kept. Purging them is out of scope.
 

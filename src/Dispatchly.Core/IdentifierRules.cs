@@ -20,7 +20,7 @@ public static partial class IdentifierRules
     /// <summary>Longest outbox table name that still leaves room for the dead-letter suffix.</summary>
     public const int MaxTableNameLength = MaxLength - 12;
 
-    private static readonly HashSet<string> ReservedTables = new(StringComparer.Ordinal)
+    private static readonly HashSet<string> ReservedTables = new(StringComparer.OrdinalIgnoreCase)
     {
         "outbox_table",
         IdempotencyInboxTable,
@@ -29,6 +29,9 @@ public static partial class IdentifierRules
 
     [GeneratedRegex("^[a-z_][a-z0-9_]*$", RegexOptions.CultureInvariant)]
     private static partial Regex SimpleName();
+
+    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant)]
+    private static partial Regex TableNamePattern();
 
     /// <summary>Returns <paramref name="schema" /> when it is a safe schema name.</summary>
     public static string ValidateSchema(string schema)
@@ -50,10 +53,10 @@ public static partial class IdentifierRules
     {
         if (string.IsNullOrWhiteSpace(tableName)
             || tableName.Length > MaxTableNameLength
-            || !SimpleName().IsMatch(tableName))
+            || !TableNamePattern().IsMatch(tableName))
         {
             throw new ArgumentException(
-                $"Table '{tableName}' must match ^[a-z_][a-z0-9_]*$ and be at most {MaxTableNameLength} characters.",
+                $"Table '{tableName}' must match ^[A-Za-z_][A-Za-z0-9_]*$ and be at most {MaxTableNameLength} characters.",
                 nameof(tableName));
         }
 
@@ -87,17 +90,35 @@ public static partial class IdentifierRules
     /// <summary>Builds the dead-letter table name for an outbox table.</summary>
     public static string DeadLetterTable(string tableName) => tableName + DeadLetterSuffix;
 
-    /// <summary>Converts a CLR type name into a PostgreSQL table name.</summary>
-    public static string FromClrName(string typeName)
+    /// <summary>Converts a CLR type name into a table name using <paramref name="naming" />.</summary>
+    public static string FromClrName(string typeName, TableNaming naming = TableNaming.SnakeCase)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(typeName);
+        if (!Enum.IsDefined(naming))
+        {
+            throw new ArgumentOutOfRangeException(nameof(naming), naming, "Unknown table naming.");
+        }
+
         var tick = typeName.IndexOf('`', StringComparison.Ordinal);
         if (tick >= 0)
         {
             typeName = typeName[..tick];
         }
 
-        return ValidateTable(ToSnakeCase(typeName));
+        var table = naming == TableNaming.PascalCase ? ToPascalCase(typeName) : ToSnakeCase(typeName);
+        return ValidateTable(table);
+    }
+
+    /// <summary>Returns <paramref name="name" /> when it can be used as a PascalCase table name.</summary>
+    public static string ToPascalCase(string name)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        if (name.Length <= MaxTableNameLength && TableNamePattern().IsMatch(name) && !ReservedTables.Contains(name))
+        {
+            return name;
+        }
+
+        return Fit(name, name, "Message");
     }
 
     /// <summary>Converts <paramref name="name" /> to lower snake case.</summary>
@@ -133,12 +154,17 @@ public static partial class IdentifierRules
             return snake;
         }
 
-        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(name)))[..8].ToLowerInvariant();
+        return Fit(snake, name, "message");
+    }
+
+    private static string Fit(string candidate, string hashSource, string fallbackPrefix)
+    {
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(hashSource)))[..8].ToLowerInvariant();
         var prefixLength = MaxTableNameLength - hash.Length - 1;
-        var prefix = snake.Length > prefixLength ? snake[..prefixLength].TrimEnd('_') : snake;
-        if (prefix.Length == 0 || !SimpleName().IsMatch(prefix))
+        var prefix = candidate.Length > prefixLength ? candidate[..prefixLength].TrimEnd('_') : candidate;
+        if (prefix.Length == 0 || !TableNamePattern().IsMatch(prefix))
         {
-            prefix = "message";
+            prefix = fallbackPrefix;
         }
 
         return ValidateTable(prefix + "_" + hash);

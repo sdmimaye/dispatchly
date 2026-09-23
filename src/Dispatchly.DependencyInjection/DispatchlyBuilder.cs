@@ -9,6 +9,7 @@ public sealed class DispatchlyBuilder
     private readonly List<Type> _behaviorTypes = [];
     private readonly List<Func<IServiceProvider, IMessageBehavior>> _behaviorFactories = [];
     private string? _transport;
+    private TableNaming _tableNaming = TableNaming.SnakeCase;
 
     internal DispatchlyBuilder(IServiceCollection services, MessageTypeCatalog catalog)
     {
@@ -22,6 +23,23 @@ public sealed class DispatchlyBuilder
     internal MessageTypeCatalog Catalog { get; }
 
     internal string? TransportName => _transport;
+
+    internal TableNaming TableNaming => _tableNaming;
+
+    internal void SetTableNaming(TableNaming naming)
+    {
+        if (!Enum.IsDefined(naming))
+        {
+            throw new ArgumentOutOfRangeException(nameof(naming), naming, "Unknown table naming.");
+        }
+
+        if (Catalog.Registrations.Count > 0)
+        {
+            throw new InvalidOperationException("Table naming must be set before any message is registered.");
+        }
+
+        _tableNaming = naming;
+    }
 
     internal IReadOnlyList<Func<IServiceProvider, IMessageBehavior>> BehaviorFactories => _behaviorFactories;
 

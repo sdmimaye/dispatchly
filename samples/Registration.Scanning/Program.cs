@@ -22,7 +22,6 @@ await host.Services.GetRequiredService<IMessagePublisher>().PublishAsync(new Ord
 await delivered.Task.WaitAsync(TimeSpan.FromSeconds(5));
 await host.StopAsync();
 
-[DispatchlyTable("placed_orders")]
 public sealed record OrderPlaced(string OrderId);
 
 public sealed class OrderPlacedHandler : IMessageHandler<OrderPlaced>

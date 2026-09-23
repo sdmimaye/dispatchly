@@ -74,7 +74,14 @@ internal static class SourceEmitter
         foreach (var handler in handlers)
         {
             var identifier = identifiers[handler.MessageType];
-            builder.AppendLine($"            builder.AddHandler<{handler.MessageType}, {handler.HandlerType}>(global::Dispatchly.Generated.DispatchlyJsonContext.Default.{identifier}, \"{handler.TableName}\");");
+            if (handler.TableName is null)
+            {
+                builder.AppendLine($"            builder.AddHandler<{handler.MessageType}, {handler.HandlerType}>(global::Dispatchly.Generated.DispatchlyJsonContext.Default.{identifier});");
+            }
+            else
+            {
+                builder.AppendLine($"            builder.AddHandler<{handler.MessageType}, {handler.HandlerType}>(global::Dispatchly.Generated.DispatchlyJsonContext.Default.{identifier}, \"{handler.TableName}\");");
+            }
         }
 
         builder.AppendLine("            return builder;");

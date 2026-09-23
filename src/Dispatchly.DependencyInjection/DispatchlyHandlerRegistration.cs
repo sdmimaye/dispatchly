@@ -37,7 +37,7 @@ public static class DispatchlyHandlerRegistration
             TypeInfoResolver = new DefaultJsonTypeInfoResolver(),
         };
         var typeInfo = (JsonTypeInfo<TMessage>)options.GetTypeInfo(typeof(TMessage));
-        return builder.AddMessage(typeInfo, MessageTableNames.FromType(typeof(TMessage)));
+        return builder.AddMessage(typeInfo, MessageTableNames.FromType(typeof(TMessage), builder.TableNaming));
     }
 
     /// <summary>Registers a handler with source-generated or caller-supplied JSON metadata.</summary>
@@ -70,7 +70,7 @@ public static class DispatchlyHandlerRegistration
             TypeInfoResolver = new DefaultJsonTypeInfoResolver(),
         };
         var typeInfo = (JsonTypeInfo<TMessage>)options.GetTypeInfo(typeof(TMessage));
-        var tableName = MessageTableNames.FromType(typeof(TMessage));
+        var tableName = MessageTableNames.FromType(typeof(TMessage), builder.TableNaming);
         return builder.AddHandler<TMessage, THandler>(typeInfo, tableName);
     }
 
@@ -81,7 +81,7 @@ public static class DispatchlyHandlerRegistration
         Type? handlerType)
     {
         var resolvedTable = string.IsNullOrWhiteSpace(tableName)
-            ? IdentifierRules.FromClrName(typeof(TMessage).Name)
+            ? IdentifierRules.FromClrName(typeof(TMessage).Name, builder.TableNaming)
             : IdentifierRules.ValidateTable(tableName);
 
         builder.Catalog.GetOrAdd(

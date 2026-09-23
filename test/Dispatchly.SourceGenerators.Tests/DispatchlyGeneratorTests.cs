@@ -34,7 +34,7 @@ public class DispatchlyGeneratorTests
     [Fact]
     public void Emit_WritesHandlerRegistrationAndJsonContext()
     {
-        var source = """
+        var generated = Generate("""
             using Dispatchly.Abstractions;
             namespace Sample;
             [DispatchlyTable("placed_orders")]
@@ -44,7 +44,32 @@ public class DispatchlyGeneratorTests
                 public System.Threading.Tasks.Task HandleAsync(OrderPlaced message, MessageContext context, System.Threading.CancellationToken cancellationToken)
                     => System.Threading.Tasks.Task.CompletedTask;
             }
-            """;
+            """);
+        Assert.Contains("AddDispatchlyGeneratedHandlers", generated, StringComparison.Ordinal);
+        Assert.Contains("DispatchlyJsonContext", generated, StringComparison.Ordinal);
+        Assert.Contains("\"placed_orders\"", generated, StringComparison.Ordinal);
+        Assert.Contains("OrderPlacedHandler", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Emit_OmitsTableNameWhenTheAttributeIsAbsent()
+    {
+        var generated = Generate("""
+            using Dispatchly.Abstractions;
+            namespace Sample;
+            public sealed record OrderPlaced(string OrderId);
+            public sealed class OrderPlacedHandler : IMessageHandler<OrderPlaced>
+            {
+                public System.Threading.Tasks.Task HandleAsync(OrderPlaced message, MessageContext context, System.Threading.CancellationToken cancellationToken)
+                    => System.Threading.Tasks.Task.CompletedTask;
+            }
+            """);
+        Assert.Contains("AddHandler<global::Sample.OrderPlaced, global::Sample.OrderPlacedHandler>(global::Dispatchly.Generated.DispatchlyJsonContext.Default.OrderPlaced);", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"order_placed\"", generated, StringComparison.Ordinal);
+    }
+
+    private static string Generate(string source)
+    {
         var syntax = CSharpSyntaxTree.ParseText(source);
         var references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
             .Split(Path.PathSeparator)
@@ -62,15 +87,14 @@ public class DispatchlyGeneratorTests
         var generated = string.Join(
             "\n",
             updated.SyntaxTrees.Select(tree => tree.ToString()));
-        Assert.Contains("AddDispatchlyGeneratedHandlers", generated, StringComparison.Ordinal);
-        Assert.Contains("DispatchlyJsonContext", generated, StringComparison.Ordinal);
-        Assert.Contains("\"placed_orders\"", generated, StringComparison.Ordinal);
-        Assert.Contains("OrderPlacedHandler", generated, StringComparison.Ordinal);
-
-        var generatedCompilation = updated.AddReferences(
-            MetadataReference.CreateFromFile(typeof(DispatchlyBuilder).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(MessageDispatcher).Assembly.Location));
-        var emit = generatedCompilation.Emit(Stream.Null);
+        var emit = Emit(updated);
         Assert.True(emit.Success, string.Join(Environment.NewLine, emit.Diagnostics));
+        return generated;
     }
+
+    private static Microsoft.CodeAnalysis.Emit.EmitResult Emit(Compilation compilation) =>
+        compilation.AddReferences(
+            MetadataReference.CreateFromFile(typeof(DispatchlyBuilder).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(MessageDispatcher).Assembly.Location))
+            .Emit(Stream.Null);
 }
