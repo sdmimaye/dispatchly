@@ -107,7 +107,7 @@ public sealed class SqlServerOutboxEndToEndTests
     }
 
     [Fact]
-    public async Task PublishAsync_MessageCommittedWhileTheListenerIsDownIsDeliveredWhenListeningStarts()
+    public async Task PublishAsync_MessageCommittedWhileTheListenerIsDownIsDeliveredByRedelivery()
     {
         var schema = NewSchema();
         MessageId id;
@@ -124,6 +124,10 @@ public sealed class SqlServerOutboxEndToEndTests
 
         var inbox = new Inbox();
         using var consumer = await StartAsync(schema, publishOnly: false, inbox);
+        await Task.Delay(250);
+        Assert.Empty(inbox.Attempts);
+
+        await consumer.Services.GetRequiredService<ISqlServerMaintenance>().RedeliverAsync();
         var received = await inbox.WaitForSingleAsync();
         Assert.Equal(id.Value, received.MessageId);
         Assert.Equal("1001", received.OrderId);

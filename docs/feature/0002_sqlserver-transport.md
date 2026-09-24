@@ -12,7 +12,7 @@
 - `UseSqlServerTransport` selects the transport
 - `PublishAsync` inserts and commits the outbox row before it returns
 - An insert trigger `SEND`s `{id, table}` on a Service Broker conversation
-- The host blocks in `WAITFOR (RECEIVE)` on one queue per handled message type
+- The host blocks in `WAITFOR (RECEIVE)` on one queue per handling host
 - `ISqlServerMaintenance.RedeliverAsync` runs the procedure SQL Server Agent schedules
 - Azure SQL Database is unsupported because it has no Service Broker
 

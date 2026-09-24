@@ -9,6 +9,11 @@ public sealed class SqlServerTransportOptions
     /// <summary>Schema that holds outbox tables. The default is <c>dispatchly</c>.</summary>
     public string Schema { get; set; } = "dispatchly";
 
+    /// <summary>
+    /// A handling host leaves the ring after this long without a heartbeat. The default is 5 seconds.
+    /// </summary>
+    public TimeSpan HeartbeatTimeout { get; set; } = TimeSpan.FromSeconds(5);
+
     /// <summary>How long a claimed message stays invisible to other workers. The default is 30 seconds.</summary>
     public TimeSpan VisibilityTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
@@ -38,6 +43,11 @@ public sealed class SqlServerTransportOptions
 
     internal bool IdempotencyEnabled { get; set; }
 
+    internal int HeartbeatTimeoutMilliseconds { get; private set; } = 5_000;
+
+    internal TimeSpan HeartbeatInterval =>
+        TimeSpan.FromMilliseconds(Math.Max(1, HeartbeatTimeout.TotalMilliseconds / 3));
+
     internal int RedeliveryIntervalMinutes { get; private set; } = 1;
 
     internal void Validate()
@@ -49,6 +59,7 @@ public sealed class SqlServerTransportOptions
 
         Schema = IdentifierRules.ValidateSchema(Schema);
         CronJobName = IdentifierRules.ValidateSchema(CronJobName);
+        HeartbeatTimeoutMilliseconds = SqlServerDelay.Milliseconds(HeartbeatTimeout, nameof(HeartbeatTimeout));
         RedeliveryIntervalMinutes = ParseIntervalMinutes(CronSchedule);
         _ = SqlServerDelay.Milliseconds(VisibilityTimeout, nameof(VisibilityTimeout));
         _ = SqlServerDelay.Milliseconds(MaxBackoff, nameof(MaxBackoff));

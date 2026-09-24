@@ -4,6 +4,9 @@
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Dispatchly.Transport.SqlServer.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../Dispatchly.DependencyInjection/Dispatchly.DependencyInjection.csproj" />
     <PackageReference Include="Microsoft.Data.SqlClient" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />

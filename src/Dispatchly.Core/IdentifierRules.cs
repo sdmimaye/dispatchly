@@ -17,6 +17,15 @@ public static partial class IdentifierRules
     /// <summary>Table that stores completed message identifiers when idempotency is enabled.</summary>
     public const string IdempotencyInboxTable = "idempotency_inbox";
 
+    /// <summary>Table of live handling hosts.</summary>
+    public const string ConsumerTable = "consumer";
+
+    /// <summary>Tables each handling host has a handler for.</summary>
+    public const string ConsumerMembershipTable = "consumer_table";
+
+    /// <summary>Per-table round-robin cursor.</summary>
+    public const string OutboxCursorTable = "outbox_cursor";
+
     /// <summary>Longest outbox table name that still leaves room for the dead-letter suffix.</summary>
     public const int MaxTableNameLength = MaxLength - 12;
 
@@ -24,6 +33,9 @@ public static partial class IdentifierRules
     {
         "outbox_table",
         IdempotencyInboxTable,
+        ConsumerTable,
+        ConsumerMembershipTable,
+        OutboxCursorTable,
         "settings",
     };
 

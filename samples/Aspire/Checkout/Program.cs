@@ -19,28 +19,38 @@ builder.Services.AddDispatchly()
         options.ScheduleRedelivery = false;
     });
 
+var publishesPerSecond = builder.Configuration.GetValue("Checkout:PublishesPerSecond", 5);
+if (publishesPerSecond < 1)
+{
+    throw new InvalidOperationException("Checkout:PublishesPerSecond must be at least 1.");
+}
+
 using var host = builder.Build();
 await host.StartAsync();
 
 var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 var stopping = host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping;
-using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+var sequence = 0L;
 
-Console.WriteLine("Checkout publishes one order every 5 seconds.");
+Console.WriteLine($"Checkout publishes {publishesPerSecond} orders every second.");
 
 try
 {
     while (!stopping.IsCancellationRequested)
     {
-        var orderId = $"ord-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}";
-        try
+        for (var i = 0; i < publishesPerSecond && !stopping.IsCancellationRequested; i++)
         {
-            var id = await publisher.PublishAsync(new OrderPlaced(orderId), stopping);
-            Console.WriteLine($"Checkout published {orderId} as {id}.");
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            Console.Error.WriteLine($"Checkout failed to publish {orderId}: {ex}");
+            var orderId = $"ord-{Interlocked.Increment(ref sequence):D6}";
+            try
+            {
+                var id = await publisher.PublishAsync(new OrderPlaced(orderId), stopping);
+                Console.WriteLine($"Checkout published {orderId} as {id}.");
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Console.Error.WriteLine($"Checkout failed to publish {orderId}: {ex}");
+            }
         }
 
         await timer.WaitForNextTickAsync(stopping);

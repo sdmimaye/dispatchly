@@ -39,6 +39,8 @@ internal sealed class PostgresSchemaProvisioner
                 .ConfigureAwait(false);
         }
 
+        await ExecuteAsync(connection, PostgresSql.CreateConsumerTables(_options), cancellationToken).ConfigureAwait(false);
+        await ExecuteAsync(connection, PostgresSql.WakeFunction(_options), cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(connection, PostgresSql.NotifyFunction(_options), cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(connection, PostgresSql.RedeliverFunction(_options), cancellationToken).ConfigureAwait(false);
 

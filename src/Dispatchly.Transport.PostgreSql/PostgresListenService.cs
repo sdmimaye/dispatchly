@@ -17,8 +17,11 @@ internal sealed class PostgresListenService : IHostedService
     private readonly Lock _inFlightLock = new();
     private readonly List<Task> _inFlight = [];
     private readonly CancellationTokenSource _stopping = new();
+    private readonly CancellationTokenSource _heartbeatStopping = new();
     private readonly TaskCompletionSource _listening = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Task? _run;
+    private string? _consumerId;
+    private string? _channel;
 
     public PostgresListenService(
         PostgresTransportOptions options,
@@ -42,8 +45,13 @@ internal sealed class PostgresListenService : IHostedService
         return _listening.Task.WaitAsync(cancellationToken);
     }
 
+    /// <summary>Stops heartbeats and leaves the consumer row in place. Used to simulate a crash.</summary>
+    internal void Abandon() => _heartbeatStopping.Cancel();
+
     public async Task StopAsync(CancellationToken cancellationToken)
     {
+        _heartbeatStopping.Cancel();
+        await UnregisterAsync(cancellationToken).ConfigureAwait(false);
         await _stopping.CancelAsync().ConfigureAwait(false);
         _notifications.Writer.TryComplete();
         if (_run is not null)
@@ -66,27 +74,23 @@ internal sealed class PostgresListenService : IHostedService
         try
         {
             await _provisioner.ProvisionAsync(stoppingToken).ConfigureAwait(false);
-            while (!stoppingToken.IsCancellationRequested)
+            var handled = _catalog.Registrations.Where(registration => registration.HasHandlers).Select(registration => registration.TableName).ToArray();
+            if (handled.Length == 0)
             {
-                try
-                {
-                    await ListenAsync(stoppingToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                {
-                    break;
-                }
-                catch (Exception exception)
-                {
-                    _logger.LogError(exception, "PostgreSQL LISTEN connection failed. Reconnecting.");
-                    if (!_listening.Task.IsCompleted)
-                    {
-                        _listening.TrySetException(exception);
-                        break;
-                    }
+                _listening.TrySetResult();
+                return;
+            }
 
-                    await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken).ConfigureAwait(false);
-                }
+            await RegisterAsync(handled, stoppingToken).ConfigureAwait(false);
+            var heartbeat = HeartbeatAsync(stoppingToken);
+            try
+            {
+                await ListenUntilStoppedAsync(stoppingToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _heartbeatStopping.Cancel();
+                await heartbeat.ConfigureAwait(false);
             }
         }
         catch (Exception exception)
@@ -101,12 +105,120 @@ internal sealed class PostgresListenService : IHostedService
         }
     }
 
+    private async Task ListenUntilStoppedAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await ListenAsync(stoppingToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError(exception, "PostgreSQL LISTEN connection failed. Reconnecting.");
+                if (!_listening.Task.IsCompleted)
+                {
+                    _listening.TrySetException(exception);
+                    break;
+                }
+
+                await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private async Task RegisterAsync(string[] tables, CancellationToken cancellationToken)
+    {
+        _consumerId = Guid.NewGuid().ToString("N");
+        _channel = IdentifierRules.ValidateChannel("c" + _consumerId);
+        await using var connection = new NpgsqlConnection(_options.ConnectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var insert = new NpgsqlCommand(
+            $"""
+            INSERT INTO {PostgresSql.Qualify(_options.Schema, IdentifierRules.ConsumerTable)}
+                (id, channel, heartbeat_at, timeout_ms)
+            VALUES (@id, @channel, clock_timestamp(), @timeout_ms);
+            """,
+            connection);
+        insert.Parameters.AddWithValue("id", _consumerId);
+        insert.Parameters.AddWithValue("channel", _channel);
+        insert.Parameters.AddWithValue("timeout_ms", _options.HeartbeatTimeoutMilliseconds);
+        await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        foreach (var table in tables)
+        {
+            await using var membership = new NpgsqlCommand(
+                $"""
+                INSERT INTO {PostgresSql.Qualify(_options.Schema, IdentifierRules.ConsumerMembershipTable)}
+                    (consumer_id, table_name)
+                VALUES (@id, @table_name);
+                """,
+                connection);
+            membership.Parameters.AddWithValue("id", _consumerId);
+            membership.Parameters.AddWithValue("table_name", table);
+            await membership.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task HeartbeatAsync(CancellationToken stoppingToken)
+    {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, _heartbeatStopping.Token);
+        var cancellationToken = linked.Token;
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(_options.HeartbeatInterval, cancellationToken).ConfigureAwait(false);
+                await using var connection = new NpgsqlConnection(_options.ConnectionString);
+                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+                await using var command = new NpgsqlCommand(
+                    $"""
+                    UPDATE {PostgresSql.Qualify(_options.Schema, IdentifierRules.ConsumerTable)}
+                    SET heartbeat_at = clock_timestamp()
+                    WHERE id = @id;
+                    """,
+                    connection);
+                command.Parameters.AddWithValue("id", _consumerId!);
+                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError(exception, "PostgreSQL consumer heartbeat failed.");
+            }
+        }
+    }
+
+    private async Task UnregisterAsync(CancellationToken cancellationToken)
+    {
+        if (_consumerId is null)
+        {
+            return;
+        }
+
+        var id = _consumerId;
+        _consumerId = null;
+        await using var connection = new NpgsqlConnection(_options.ConnectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(
+            $"DELETE FROM {PostgresSql.Qualify(_options.Schema, IdentifierRules.ConsumerTable)} WHERE id = @id;",
+            connection);
+        command.Parameters.AddWithValue("id", id);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task ListenAsync(CancellationToken stoppingToken)
     {
         await using var connection = new NpgsqlConnection(_options.ConnectionString);
         await connection.OpenAsync(stoppingToken).ConfigureAwait(false);
         connection.Notification += (_, args) => _notifications.Writer.TryWrite(args.Payload);
-        await using (var listen = new NpgsqlCommand($"LISTEN {IdentifierRules.Quote(_options.Channel)};", connection))
+        await using (var listen = new NpgsqlCommand($"LISTEN {IdentifierRules.Quote(_channel!)};", connection))
         {
             await listen.ExecuteNonQueryAsync(stoppingToken).ConfigureAwait(false);
         }

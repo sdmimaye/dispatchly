@@ -16,4 +16,4 @@ Dispatchly.Abstractions
 
 `Dispatchly.EntityFrameworkCore` reads `IDomainEventSource` events during `SaveChanges` and inserts them through `IMessageOutbox` on the current database transaction. It references Abstractions only. Delivery stays on the PostgreSQL or SQL Server transport.
 
-PostgreSQL and SQL Server each keep an internal `outbox_table` registry so `redeliver_undelivered` can visit every message table. Each message type still has its own outbox table and `{table}_dead_letter` table. SQL Server also creates a Service Broker queue per message table, because one `WAITFOR (RECEIVE)` waits on one queue. A host blocks only on queues for message types it handles.
+PostgreSQL and SQL Server each keep an internal `outbox_table` registry so `redeliver_undelivered` can visit every message table. Each message type still has its own outbox table and `{table}_dead_letter` table. Handling hosts register in `consumer` and `consumer_table`. Each insert and each redelivery advances `outbox_cursor` and wakes the next live host. PostgreSQL notifies that host's channel. SQL Server sends to that host's queue and target service. A publish-only host is not in the ring.

@@ -23,5 +23,4 @@ Specs for work that has not shipped. Status is exactly one of `Proposed`, `Appro
 
 ## Active plans
 
-| Plan | Status | Summary |
-| --- | --- | --- |
+None.
