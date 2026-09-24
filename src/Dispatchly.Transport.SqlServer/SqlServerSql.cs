@@ -6,44 +6,190 @@ internal static class SqlServerSql
 
     public static string Qualify(string schema, string name) => SqlServerIdentifiers.Qualify(schema, name);
 
-    public static string NotifyProcedure(SqlServerTransportOptions options) => $$"""
-        CREATE OR ALTER PROCEDURE {{Qualify(options.Schema, "notify_outbox")}}
-            @id uniqueidentifier,
-            @table nvarchar(128),
-            @initiator nvarchar(256),
-            @target nvarchar(256),
-            @contract nvarchar(256),
-            @message_type nvarchar(256)
-        AS
-        BEGIN
-            SET NOCOUNT ON;
-            DECLARE @body nvarchar(max) = (
-                SELECT @id AS id, @table AS [table]
-                FOR JSON PATH, WITHOUT_ARRAY_WRAPPER);
-            DECLARE @dialog nvarchar(max) = N'
+    public static string CreateConsumerTables(SqlServerTransportOptions options)
+    {
+        var consumer = Qualify(options.Schema, IdentifierRules.ConsumerTable);
+        var membership = Qualify(options.Schema, IdentifierRules.ConsumerMembershipTable);
+        var cursor = Qualify(options.Schema, IdentifierRules.OutboxCursorTable);
+        var consumerId = ObjectId(options, IdentifierRules.ConsumerTable);
+        var membershipId = ObjectId(options, IdentifierRules.ConsumerMembershipTable);
+        var cursorId = ObjectId(options, IdentifierRules.OutboxCursorTable);
+        return $"""
+            IF OBJECT_ID({consumerId}, N'U') IS NULL
+                CREATE TABLE {consumer} (
+                    id nvarchar(32) NOT NULL PRIMARY KEY,
+                    queue_name nvarchar(128) NOT NULL,
+                    target_service nvarchar(256) NOT NULL,
+                    initiator_service nvarchar(256) NOT NULL,
+                    heartbeat_at datetimeoffset NOT NULL,
+                    timeout_ms int NOT NULL
+                );
+            IF OBJECT_ID({membershipId}, N'U') IS NULL
+                CREATE TABLE {membership} (
+                    consumer_id nvarchar(32) NOT NULL,
+                    table_name nvarchar(128) NOT NULL,
+                    CONSTRAINT {SqlServerIdentifiers.Quote("pk_" + IdentifierRules.ConsumerMembershipTable)}
+                        PRIMARY KEY (consumer_id, table_name),
+                    CONSTRAINT {SqlServerIdentifiers.Quote("fk_" + IdentifierRules.ConsumerMembershipTable)}
+                        FOREIGN KEY (consumer_id) REFERENCES {consumer} (id) ON DELETE CASCADE
+                );
+            IF OBJECT_ID({cursorId}, N'U') IS NULL
+                CREATE TABLE {cursor} (
+                    table_name nvarchar(128) NOT NULL PRIMARY KEY,
+                    position bigint NOT NULL
+                );
+            """;
+    }
+
+    public static string RetireProcedure(SqlServerTransportOptions options)
+    {
+        var consumer = Qualify(options.Schema, IdentifierRules.ConsumerTable);
+        var schema = SqlServerIdentifiers.UnicodeLiteral(options.Schema);
+        return $$"""
+            CREATE OR ALTER PROCEDURE {{Qualify(options.Schema, "retire_stale_consumers")}}
+            AS
+            BEGIN
+                SET NOCOUNT ON;
+                DECLARE @id nvarchar(32);
+                DECLARE @queue nvarchar(128);
+                DECLARE @target nvarchar(256);
+                DECLARE @initiator nvarchar(256);
                 DECLARE @handle uniqueidentifier;
-                BEGIN DIALOG CONVERSATION @handle
-                    FROM SERVICE ' + QUOTENAME(@initiator) + N'
-                    TO SERVICE ' + QUOTENAME(@target, N'''') + N'
-                    ON CONTRACT ' + QUOTENAME(@contract) + N'
-                    WITH ENCRYPTION = OFF;
-                SEND ON CONVERSATION @handle MESSAGE TYPE ' + QUOTENAME(@message_type) + N' (@body);
-                END CONVERSATION @handle;';
-            EXEC sys.sp_executesql @dialog, N'@body nvarchar(max)', @body = @body;
-        END
-        """;
+                DECLARE @drop nvarchar(max);
+
+                DECLARE stale CURSOR LOCAL FAST_FORWARD FOR
+                    SELECT id, queue_name, target_service, initiator_service
+                    FROM {{consumer}} WITH (UPDLOCK, ROWLOCK)
+                    WHERE heartbeat_at <= DATEADD(millisecond, -timeout_ms, SYSUTCDATETIME());
+
+                OPEN stale;
+                FETCH NEXT FROM stale INTO @id, @queue, @target, @initiator;
+                WHILE @@FETCH_STATUS = 0
+                BEGIN
+                    DELETE FROM {{consumer}}
+                    WHERE id = @id
+                      AND heartbeat_at <= DATEADD(millisecond, -timeout_ms, SYSUTCDATETIME());
+
+                    IF @@ROWCOUNT = 1
+                    BEGIN
+                        WHILE 1 = 1
+                        BEGIN
+                            SET @handle = NULL;
+                            SELECT TOP (1) @handle = conversation_handle
+                            FROM sys.conversation_endpoints AS endpoint
+                            INNER JOIN sys.services AS service ON service.service_id = endpoint.service_id
+                            WHERE service.name IN (@target, @initiator);
+                            IF @handle IS NULL
+                                BREAK;
+                            END CONVERSATION @handle WITH CLEANUP;
+                        END
+
+                        IF EXISTS (SELECT 1 FROM sys.services WHERE name = @target)
+                        BEGIN
+                            SET @drop = N'DROP SERVICE ' + QUOTENAME(@target);
+                            EXEC sys.sp_executesql @drop;
+                        END
+                        IF EXISTS (SELECT 1 FROM sys.services WHERE name = @initiator)
+                        BEGIN
+                            SET @drop = N'DROP SERVICE ' + QUOTENAME(@initiator);
+                            EXEC sys.sp_executesql @drop;
+                        END
+                        IF EXISTS (
+                            SELECT 1
+                            FROM sys.service_queues
+                            WHERE name = @queue
+                              AND schema_id = SCHEMA_ID({{schema}}))
+                        BEGIN
+                            SET @drop = N'DROP QUEUE ' + QUOTENAME({{schema}}) + N'.' + QUOTENAME(@queue);
+                            EXEC sys.sp_executesql @drop;
+                        END
+                    END
+
+                    FETCH NEXT FROM stale INTO @id, @queue, @target, @initiator;
+                END
+                CLOSE stale;
+                DEALLOCATE stale;
+            END
+            """;
+    }
+
+    public static string NotifyProcedure(SqlServerTransportOptions options)
+    {
+        var consumer = Qualify(options.Schema, IdentifierRules.ConsumerTable);
+        var membership = Qualify(options.Schema, IdentifierRules.ConsumerMembershipTable);
+        var cursor = Qualify(options.Schema, IdentifierRules.OutboxCursorTable);
+        var contract = SqlServerIdentifiers.UnicodeLiteral(SqlServerIdentifiers.Contract(options.Schema));
+        var messageType = SqlServerIdentifiers.UnicodeLiteral(SqlServerIdentifiers.MessageType(options.Schema));
+        return $$"""
+            CREATE OR ALTER PROCEDURE {{Qualify(options.Schema, "notify_outbox")}}
+                @id uniqueidentifier,
+                @table nvarchar(128)
+            AS
+            BEGIN
+                SET NOCOUNT ON;
+
+                MERGE {{cursor}} WITH (HOLDLOCK) AS target
+                USING (SELECT @table AS table_name) AS source
+                ON target.table_name = source.table_name
+                WHEN NOT MATCHED THEN
+                    INSERT (table_name, position) VALUES (@table, 0)
+                WHEN MATCHED THEN
+                    UPDATE SET position = target.position;
+
+                DECLARE @advanced TABLE (position bigint NOT NULL);
+                UPDATE {{cursor}}
+                SET position = position + 1
+                OUTPUT inserted.position INTO @advanced (position)
+                WHERE table_name = @table;
+                DECLARE @next bigint = (SELECT position FROM @advanced);
+
+                DECLARE @live TABLE (
+                    ordinal int NOT NULL PRIMARY KEY,
+                    target_service nvarchar(256) NOT NULL,
+                    initiator_service nvarchar(256) NOT NULL);
+                INSERT INTO @live (ordinal, target_service, initiator_service)
+                SELECT ROW_NUMBER() OVER (ORDER BY host.id) - 1, host.target_service, host.initiator_service
+                FROM {{consumer}} AS host WITH (UPDLOCK, HOLDLOCK)
+                INNER JOIN {{membership}} AS membership ON membership.consumer_id = host.id
+                WHERE membership.table_name = @table
+                  AND host.heartbeat_at > DATEADD(millisecond, -host.timeout_ms, SYSUTCDATETIME());
+
+                DECLARE @live_count int = (SELECT COUNT(*) FROM @live);
+                IF @live_count = 0
+                    RETURN;
+
+                DECLARE @target nvarchar(256);
+                DECLARE @initiator nvarchar(256);
+                SELECT @target = target_service, @initiator = initiator_service
+                FROM @live
+                WHERE ordinal = @next % @live_count;
+
+                DECLARE @body nvarchar(max) = (
+                    SELECT @id AS id, @table AS [table]
+                    FOR JSON PATH, WITHOUT_ARRAY_WRAPPER);
+                DECLARE @dialog nvarchar(max) = N'
+                    DECLARE @handle uniqueidentifier;
+                    BEGIN DIALOG CONVERSATION @handle
+                        FROM SERVICE ' + QUOTENAME(@initiator) + N'
+                        TO SERVICE ' + QUOTENAME(@target, N'''') + N'
+                        ON CONTRACT ' + QUOTENAME({{contract}}) + N'
+                        WITH ENCRYPTION = OFF;
+                    SEND ON CONVERSATION @handle MESSAGE TYPE ' + QUOTENAME({{messageType}}) + N' (@body);
+                    END CONVERSATION @handle;';
+                EXEC sys.sp_executesql @dialog, N'@body nvarchar(max)', @body = @body;
+            END
+            """;
+    }
 
     public static string RedeliverProcedure(SqlServerTransportOptions options)
     {
-        var schema = SqlServerIdentifiers.UnicodeLiteral(options.Schema);
-        var contract = SqlServerIdentifiers.UnicodeLiteral(SqlServerIdentifiers.Contract(options.Schema));
-        var messageType = SqlServerIdentifiers.UnicodeLiteral(SqlServerIdentifiers.MessageType(options.Schema));
         return $$"""
             CREATE OR ALTER PROCEDURE {{Qualify(options.Schema, "redeliver_undelivered")}}
                 @batch_size int
             AS
             BEGIN
                 SET NOCOUNT ON;
+                EXEC {{Qualify(options.Schema, "retire_stale_consumers")}};
                 IF @batch_size IS NULL OR @batch_size < 1
                     RETURN;
 
@@ -52,8 +198,6 @@ internal static class SqlServerSql
                 DECLARE @table nvarchar(128);
                 DECLARE @id uniqueidentifier;
                 DECLARE @sql nvarchar(max);
-                DECLARE @initiator nvarchar(256);
-                DECLARE @target nvarchar(256);
                 DECLARE @due TABLE (id uniqueidentifier NOT NULL PRIMARY KEY);
 
                 WHILE @remaining > 0
@@ -81,15 +225,9 @@ internal static class SqlServerSql
                             BREAK;
 
                         DELETE FROM @due WHERE id = @id;
-                        SET @initiator = {{schema}} + N'/' + @table + N'/initiator';
-                        SET @target = {{schema}} + N'/' + @table + N'/target';
                         EXEC {{Qualify(options.Schema, "notify_outbox")}}
                             @id = @id,
-                            @table = @table,
-                            @initiator = @initiator,
-                            @target = @target,
-                            @contract = {{contract}},
-                            @message_type = {{messageType}};
+                            @table = @table;
                         SET @remaining = @remaining - 1;
                     END
                 END
@@ -166,9 +304,8 @@ internal static class SqlServerSql
             """;
     }
 
-    public static string EnsureQueue(SqlServerTransportOptions options, string table)
+    public static string EnsureQueue(SqlServerTransportOptions options, string queue)
     {
-        var queue = SqlServerIdentifiers.Queue(table);
         var qualified = Qualify(options.Schema, queue);
         return $"""
             IF NOT EXISTS (
@@ -182,11 +319,11 @@ internal static class SqlServerSql
             """;
     }
 
-    public static string EnsureServices(SqlServerTransportOptions options, string table)
+    public static string EnsureServices(SqlServerTransportOptions options, string consumerId)
     {
-        var queue = Qualify(options.Schema, SqlServerIdentifiers.Queue(table));
-        var target = SqlServerIdentifiers.TargetService(options.Schema, table);
-        var initiator = SqlServerIdentifiers.InitiatorService(options.Schema, table);
+        var queue = Qualify(options.Schema, SqlServerIdentifiers.ConsumerQueue(consumerId));
+        var target = SqlServerIdentifiers.TargetService(options.Schema, consumerId);
+        var initiator = SqlServerIdentifiers.InitiatorService(options.Schema, consumerId);
         var contract = SqlServerIdentifiers.Contract(options.Schema);
         return $"""
             IF NOT EXISTS (SELECT 1 FROM sys.services WHERE name = {SqlServerIdentifiers.UnicodeLiteral(target)})
@@ -216,11 +353,7 @@ internal static class SqlServerSql
                     DELETE FROM @pending WHERE id = @id;
                     EXEC {notify}
                         @id = @id,
-                        @table = {SqlServerIdentifiers.UnicodeLiteral(table)},
-                        @initiator = {SqlServerIdentifiers.UnicodeLiteral(SqlServerIdentifiers.InitiatorService(options.Schema, table))},
-                        @target = {SqlServerIdentifiers.UnicodeLiteral(SqlServerIdentifiers.TargetService(options.Schema, table))},
-                        @contract = {SqlServerIdentifiers.UnicodeLiteral(SqlServerIdentifiers.Contract(options.Schema))},
-                        @message_type = {SqlServerIdentifiers.UnicodeLiteral(SqlServerIdentifiers.MessageType(options.Schema))};
+                        @table = {SqlServerIdentifiers.UnicodeLiteral(table)};
                 END
             END
             """;
@@ -321,13 +454,49 @@ internal static class SqlServerSql
         VALUES (@id, @payload);
         """;
 
-    public static string Receive(SqlServerTransportOptions options, string table) => $"""
+    public static string Receive(SqlServerTransportOptions options, string queue) => $"""
         WAITFOR (
             RECEIVE TOP (1)
                 conversation_handle,
                 message_type_name,
                 message_body
-            FROM {Qualify(options.Schema, SqlServerIdentifiers.Queue(table))}
+            FROM {Qualify(options.Schema, queue)}
         ), TIMEOUT {ReceiveTimeoutMilliseconds};
         """;
+
+    public static string DropConsumer(SqlServerTransportOptions options) => $"""
+        DECLARE @handle uniqueidentifier;
+        WHILE 1 = 1
+        BEGIN
+            SET @handle = NULL;
+            SELECT TOP (1) @handle = conversation_handle
+            FROM sys.conversation_endpoints AS endpoint
+            INNER JOIN sys.services AS service ON service.service_id = endpoint.service_id
+            WHERE service.name IN (@target, @initiator);
+            IF @handle IS NULL
+                BREAK;
+            END CONVERSATION @handle WITH CLEANUP;
+        END
+        DECLARE @drop nvarchar(max);
+        IF EXISTS (SELECT 1 FROM sys.services WHERE name = @target)
+        BEGIN
+            SET @drop = N'DROP SERVICE ' + QUOTENAME(@target);
+            EXEC sys.sp_executesql @drop;
+        END
+        IF EXISTS (SELECT 1 FROM sys.services WHERE name = @initiator)
+        BEGIN
+            SET @drop = N'DROP SERVICE ' + QUOTENAME(@initiator);
+            EXEC sys.sp_executesql @drop;
+        END
+        IF EXISTS (
+            SELECT 1 FROM sys.service_queues
+            WHERE name = @queue AND schema_id = SCHEMA_ID({SqlServerIdentifiers.UnicodeLiteral(options.Schema)}))
+        BEGIN
+            SET @drop = N'DROP QUEUE ' + QUOTENAME({SqlServerIdentifiers.UnicodeLiteral(options.Schema)}) + N'.' + QUOTENAME(@queue);
+            EXEC sys.sp_executesql @drop;
+        END
+        """;
+
+    private static string ObjectId(SqlServerTransportOptions options, string name) =>
+        "N'" + SqlServerIdentifiers.Quote(options.Schema) + "." + SqlServerIdentifiers.Quote(name) + "'";
 }

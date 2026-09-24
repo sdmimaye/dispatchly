@@ -9,8 +9,16 @@ public sealed class PostgresTransportOptions
     /// <summary>Schema that holds outbox tables. The default is <c>dispatchly</c>.</summary>
     public string Schema { get; set; } = "dispatchly";
 
-    /// <summary><c>LISTEN</c> / <c>NOTIFY</c> channel. The default is <c>dispatchly</c>.</summary>
+    /// <summary>
+    /// Kept for existing configuration. Wake-ups use a private channel per handling host, not this value.
+    /// The default is <c>dispatchly</c>.
+    /// </summary>
     public string Channel { get; set; } = "dispatchly";
+
+    /// <summary>
+    /// A handling host leaves the ring after this long without a heartbeat. The default is 5 seconds.
+    /// </summary>
+    public TimeSpan HeartbeatTimeout { get; set; } = TimeSpan.FromSeconds(5);
 
     /// <summary>How long a claimed message stays invisible to other workers. The default is 30 seconds.</summary>
     public TimeSpan VisibilityTimeout { get; set; } = TimeSpan.FromSeconds(30);
@@ -38,6 +46,11 @@ public sealed class PostgresTransportOptions
 
     internal bool IdempotencyEnabled { get; set; }
 
+    internal int HeartbeatTimeoutMilliseconds { get; private set; } = 5_000;
+
+    internal TimeSpan HeartbeatInterval =>
+        TimeSpan.FromMilliseconds(Math.Max(1, HeartbeatTimeout.TotalMilliseconds / 3));
+
     internal void Validate()
     {
         if (string.IsNullOrWhiteSpace(ConnectionString))
@@ -48,6 +61,7 @@ public sealed class PostgresTransportOptions
         Schema = IdentifierRules.ValidateSchema(Schema);
         Channel = IdentifierRules.ValidateChannel(Channel);
         CronJobName = IdentifierRules.ValidateSchema(CronJobName);
+        HeartbeatTimeoutMilliseconds = Milliseconds(HeartbeatTimeout, nameof(HeartbeatTimeout));
 
         if (VisibilityTimeout <= TimeSpan.Zero)
         {
@@ -73,5 +87,16 @@ public sealed class PostgresTransportOptions
         {
             throw new ArgumentOutOfRangeException(nameof(RedeliveryBatchSize), "RedeliveryBatchSize must be at least 1.");
         }
+    }
+
+    private static int Milliseconds(TimeSpan value, string paramName)
+    {
+        var milliseconds = Math.Ceiling(value.TotalMilliseconds);
+        if (milliseconds < 1 || milliseconds > int.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(paramName, "The interval must be between 1 millisecond and 24 days.");
+        }
+
+        return (int)milliseconds;
     }
 }

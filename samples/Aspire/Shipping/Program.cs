@@ -22,14 +22,14 @@ builder.Services.AddDispatchly()
 using var host = builder.Build();
 await host.StartAsync();
 await host.Services.GetRequiredService<IPostgresMaintenance>().RedeliverAsync();
-Console.WriteLine("Shipping is listening for orders.");
+Console.WriteLine($"Shipping {Environment.ProcessId} is listening for orders.");
 await host.WaitForShutdownAsync();
 
 internal sealed class OrderPlacedHandler : IMessageHandler<OrderPlaced>
 {
     public Task HandleAsync(OrderPlaced message, MessageContext context, CancellationToken cancellationToken)
     {
-        Console.WriteLine($"Shipping handled {message.OrderId} on attempt {context.Attempt}.");
+        Console.WriteLine($"Shipping {Environment.ProcessId} handled {message.OrderId} on attempt {context.Attempt}.");
         return Task.CompletedTask;
     }
 }

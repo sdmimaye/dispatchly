@@ -5,13 +5,95 @@ internal static class PostgresSql
     public static string Qualify(string schema, string name) =>
         IdentifierRules.Quote(schema) + "." + IdentifierRules.Quote(name);
 
+    public static string CreateConsumerTables(PostgresTransportOptions options)
+    {
+        var consumer = Qualify(options.Schema, IdentifierRules.ConsumerTable);
+        var membership = Qualify(options.Schema, IdentifierRules.ConsumerMembershipTable);
+        var cursor = Qualify(options.Schema, IdentifierRules.OutboxCursorTable);
+        return $"""
+            CREATE TABLE IF NOT EXISTS {consumer} (
+                id text PRIMARY KEY,
+                channel text NOT NULL,
+                heartbeat_at timestamptz NOT NULL,
+                timeout_ms integer NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS {membership} (
+                consumer_id text NOT NULL REFERENCES {consumer} (id) ON DELETE CASCADE,
+                table_name text NOT NULL,
+                PRIMARY KEY (consumer_id, table_name)
+            );
+            CREATE TABLE IF NOT EXISTS {cursor} (
+                table_name text PRIMARY KEY,
+                cursor bigint NOT NULL
+            );
+            """;
+    }
+
+    public static string WakeFunction(PostgresTransportOptions options)
+    {
+        var consumer = Qualify(options.Schema, IdentifierRules.ConsumerTable);
+        var membership = Qualify(options.Schema, IdentifierRules.ConsumerMembershipTable);
+        var cursor = Qualify(options.Schema, IdentifierRules.OutboxCursorTable);
+        return $$"""
+            CREATE OR REPLACE FUNCTION {{Qualify(options.Schema, "wake_outbox")}}(tbl text, message_id uuid)
+            RETURNS void
+            LANGUAGE plpgsql
+            AS $fn$
+            DECLARE
+                next_cursor bigint;
+                live_count integer;
+                chosen text;
+            BEGIN
+                INSERT INTO {{cursor}} (table_name, cursor)
+                VALUES (tbl, 0)
+                ON CONFLICT (table_name) DO NOTHING;
+
+                SELECT cursor INTO next_cursor
+                FROM {{cursor}}
+                WHERE table_name = tbl
+                FOR UPDATE;
+
+                DELETE FROM {{consumer}} AS stale
+                WHERE stale.heartbeat_at <= clock_timestamp() - (stale.timeout_ms * interval '1 millisecond');
+
+                SELECT COUNT(*) INTO live_count
+                FROM {{consumer}} AS live
+                INNER JOIN {{membership}} AS live_table ON live_table.consumer_id = live.id
+                WHERE live_table.table_name = tbl;
+
+                UPDATE {{cursor}}
+                SET cursor = cursor + 1
+                WHERE table_name = tbl
+                RETURNING cursor INTO next_cursor;
+
+                IF live_count = 0 THEN
+                    RETURN;
+                END IF;
+
+                SELECT c.channel INTO chosen
+                FROM {{consumer}} AS c
+                INNER JOIN {{membership}} AS ct ON ct.consumer_id = c.id
+                WHERE ct.table_name = tbl
+                ORDER BY c.id
+                OFFSET (next_cursor % live_count) LIMIT 1;
+
+                IF chosen IS NULL THEN
+                    RETURN;
+                END IF;
+
+                PERFORM pg_notify(chosen, json_build_object('id', message_id, 'table', tbl)::text);
+            END;
+            $fn$;
+            """;
+    }
+
     public static string NotifyFunction(PostgresTransportOptions options) => $$"""
         CREATE OR REPLACE FUNCTION {{Qualify(options.Schema, "notify_outbox")}}()
         RETURNS trigger
         LANGUAGE plpgsql
         AS $fn$
         BEGIN
-            PERFORM pg_notify(TG_ARGV[0], json_build_object('id', NEW.id, 'table', TG_TABLE_NAME)::text);
+            PERFORM {{Qualify(options.Schema, "wake_outbox")}}(TG_TABLE_NAME, NEW.id);
             RETURN NEW;
         END;
         $fn$;
@@ -39,9 +121,7 @@ internal static class PostgresSql
                     tbl)
                     USING remaining
                 LOOP
-                    PERFORM pg_notify(
-                        '{{options.Channel}}',
-                        json_build_object('id', rec.id, 'table', tbl)::text);
+                    PERFORM {{Qualify(options.Schema, "wake_outbox")}}(tbl, rec.id);
                     remaining := remaining - 1;
                     EXIT WHEN remaining <= 0;
                 END LOOP;
@@ -92,7 +172,7 @@ internal static class PostgresSql
             CREATE TRIGGER {IdentifierRules.Quote(trigger)}
             AFTER INSERT ON {Qualify(options.Schema, table)}
             FOR EACH ROW
-            EXECUTE FUNCTION {Qualify(options.Schema, "notify_outbox")}('{options.Channel}');
+            EXECUTE FUNCTION {Qualify(options.Schema, "notify_outbox")}();
             """;
     }
 

@@ -26,11 +26,11 @@ Register one transport. A second `Use*Transport` call throws.
 
 Handlers must be idempotent. A crash after the handler returns and before the row is marked delivered can run the handler again. `UsePostgresIdempotency` and `UseSqlServerIdempotency` close that gap when the handler commits its writes on the delivery transaction. `UseInMemoryIdempotency` only remembers identifiers until the process exits.
 
-The PostgreSQL transport inserts and commits the row inside `IMessagePublisher.PublishAsync`. A returned `MessageId` means the row is durable. `pg_notify` runs from an insert trigger and is delivered only after that commit. The .NET host only `LISTEN`s. It does not poll. Publish is not enlisted in any other database transaction.
+The PostgreSQL transport inserts and commits the row inside `IMessagePublisher.PublishAsync`. A returned `MessageId` means the row is durable. `pg_notify` runs from an insert trigger and is delivered only after that commit. Each handling host `LISTEN`s on its own channel. It does not poll. Publish is not enlisted in any other database transaction. When several hosts handle the same message type, each insert and each redelivery wakes the next live host in round-robin order. The outbox claim is still what stops two hosts from applying the same row.
 
 `pg_cron` runs `redeliver_undelivered`, which notifies rows whose visibility lock has expired. Set `PostgresTransportOptions.ScheduleRedelivery` to false only when the database does not have `pg_cron`, and call `IPostgresMaintenance.RedeliverAsync` from your own scheduler. If scheduling is left on and the extension is missing, startup throws.
 
-The SQL Server transport uses the same outbox tables and claim rules. The insert trigger `SEND`s a Service Broker message after the commit, and the host blocks in `WAITFOR (RECEIVE)`. It does not poll. Each handled message type has its own queue, so a publish-only registration does not consume another host's wake-up. Messages stay in the queue until received, including messages published while the process is down. SQL Server Agent runs `redeliver_undelivered` for rows whose visibility lock has expired. Set `SqlServerTransportOptions.ScheduleRedelivery` to false when Agent is not running, and call `ISqlServerMaintenance.RedeliverAsync` from your own scheduler. If scheduling is left on and Agent is stopped, startup throws. Azure SQL Database has no Service Broker, so this transport cannot run there.
+The SQL Server transport uses the same outbox tables and claim rules. The insert trigger `SEND`s a Service Broker message after the commit, and the host blocks in `WAITFOR (RECEIVE)`. It does not poll. Each handling host has its own queue and target service. A publish-only registration is not in the wake-up ring. When several hosts handle the same message type, each insert and each redelivery sends to the next live host. A message published while no handler host is live stays in the outbox until `redeliver_undelivered` runs after one joins. SQL Server Agent runs that procedure for rows whose visibility lock has expired. Set `SqlServerTransportOptions.ScheduleRedelivery` to false when Agent is not running, and call `ISqlServerMaintenance.RedeliverAsync` from your own scheduler. If scheduling is left on and Agent is stopped, startup throws. Azure SQL Database has no Service Broker, so this transport cannot run there.
 
 The in-memory transport enqueues inside `IMessagePublisher.PublishAsync`. Anything still queued is lost when the process exits, including messages whose handlers have not finished.
 
@@ -92,7 +92,7 @@ services.AddDispatchly()
     .AddHandlersFromAssemblies(typeof(OrderPlacedHandler).Assembly);
 ```
 
-`AddMessage<TMessage>(jsonTypeInfo)` registers a type for publishing without a handler. A PostgreSQL listener in that process does not claim it, and a SQL Server host does not receive on that type's queue, so another host can deliver it. The in-memory transport rejects that publish, because it can only deliver inside the current process.
+`AddMessage<TMessage>(jsonTypeInfo)` registers a type for publishing without a handler. That host is not in the wake-up ring, so another host can deliver it. The in-memory transport rejects that publish, because it can only deliver inside the current process.
 
 The source generator finds public `IMessageHandler<T>` implementations and emits `AddDispatchlyGeneratedHandlers` plus a `JsonSerializerContext`. Reference `Dispatchly.SourceGenerators` as an analyzer, then:
 
@@ -123,7 +123,7 @@ A different store can implement `IIdempotencyStore` and be registered with `UseB
 
 ## Outbox layout
 
-Each message type gets `{schema}.{table}` and `{schema}.{table}_dead_letter`. The default schema is `dispatchly`. When no table is specified, `UseTableNaming` derives it. The default, `TableNaming.SnakeCase`, turns `OrderPlaced` into `order_placed`. `TableNaming.PascalCase` keeps `OrderPlaced`. `[DispatchlyTable]` and the `tableName` argument override the strategy. SQL Server also creates `{schema}.{table}_queue` and a Service Broker service pair for that table.
+Each message type gets `{schema}.{table}` and `{schema}.{table}_dead_letter`. The default schema is `dispatchly`. When no table is specified, `UseTableNaming` derives it. The default, `TableNaming.SnakeCase`, turns `OrderPlaced` into `order_placed`. `TableNaming.PascalCase` keeps `OrderPlaced`. `[DispatchlyTable]` and the `tableName` argument override the strategy. A handling host inserts a `consumer` row at start, heartbeats it, and deletes it on graceful stop. `HeartbeatTimeout` defaults to 5 seconds. SQL Server creates one queue and target service for that host, and drops them when the host stops or the heartbeat expires.
 
 A claim increments `attempt_count` and sets `locked_until`. Success sets `delivered_at` only when the attempt still matches. Failure stores `last_error` and backs off. When the attempt reaches `MaxAttempts`, the row moves to that type's dead-letter table. Delivered rows are kept. Purging them is out of scope.
 
@@ -138,7 +138,7 @@ var id = await host.Services.GetRequiredService<IMessagePublisher>()
 
 ## SQL Server publish
 
-`SqlServerTransportOptions.ConnectionString` must target a user database with Service Broker enabled (`ALTER DATABASE [name] SET ENABLE_BROKER`). Start the generic host before publishing so the schema, queues, and `WAITFOR (RECEIVE)` loops exist. Each handled message type holds one receive connection. Messages published while the process is down remain on the queue and are delivered when a handler host starts. Rows left invisible by a crash are picked up by SQL Server Agent, or by `ISqlServerMaintenance.RedeliverAsync` when Agent is not scheduled.
+`SqlServerTransportOptions.ConnectionString` must target a user database with Service Broker enabled (`ALTER DATABASE [name] SET ENABLE_BROKER`). Start the generic host before publishing so the schema and the host queue exist. Each handling host holds one receive connection. Messages published while no handler host is live stay in the outbox until redelivery. Rows left invisible by a crash are picked up by SQL Server Agent, or by `ISqlServerMaintenance.RedeliverAsync` when Agent is not scheduled.
 
 ## Build
 
@@ -160,7 +160,7 @@ PostgreSQL and SQL Server tests use Testcontainers and need Docker. The SQL Serv
 | `samples/Transport.PostgreSql` | PostgreSQL transport through `IMessagePublisher` |
 | `samples/Transport.SqlServer` | SQL Server transport through `IMessagePublisher` |
 | `samples/EntityFrameworkCore` | Domain events enlisted on the `SaveChanges` transaction |
-| `samples/Aspire` | Checkout publishes and Shipping handles through one PostgreSQL database |
+| `samples/Aspire` | Checkout publishes and five Shipping replicas handle through one PostgreSQL database |
 
 Registration and in-memory samples:
 
@@ -190,7 +190,7 @@ DISPATCHLY_POSTGRES="Host=localhost;Username=postgres;Password=postgres;Database
   dotnet run --project samples/EntityFrameworkCore
 ```
 
-Aspire sample. Docker is required. Checkout calls `AddMessage` and Shipping calls `AddHandler` for the same `OrderPlaced` contract. The stock PostgreSQL container has no `pg_cron`, so both apps leave redelivery scheduling off. Shipping calls `IPostgresMaintenance.RedeliverAsync` once after it starts listening.
+Aspire sample. Docker is required. Checkout calls `AddMessage` and Shipping calls `AddHandler` for the same `OrderPlaced` contract. Shipping runs five replicas, and Checkout publishes five orders each second, so the dashboard logs show the round-robin wake-ups. The stock PostgreSQL container has no `pg_cron`, so both apps leave redelivery scheduling off. Each Shipping replica calls `IPostgresMaintenance.RedeliverAsync` once after it starts listening.
 
 ```bash
 dotnet run --project samples/Aspire/AppHost

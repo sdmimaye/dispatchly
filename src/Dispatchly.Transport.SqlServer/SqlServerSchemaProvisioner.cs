@@ -32,8 +32,10 @@ internal sealed class SqlServerSchemaProvisioner
         }
 
         await ExecuteAsync(connection, SqlServerSql.CreateRegistry(_options), cancellationToken).ConfigureAwait(false);
+        await ExecuteAsync(connection, SqlServerSql.CreateConsumerTables(_options), cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(connection, SqlServerSql.EnsureMessageType(_options), cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(connection, SqlServerSql.EnsureContract(_options), cancellationToken).ConfigureAwait(false);
+        await ExecuteAsync(connection, SqlServerSql.RetireProcedure(_options), cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(connection, SqlServerSql.NotifyProcedure(_options), cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(connection, SqlServerSql.RedeliverProcedure(_options), cancellationToken).ConfigureAwait(false);
 
@@ -42,10 +44,6 @@ internal sealed class SqlServerSchemaProvisioner
             await ExecuteAsync(connection, SqlServerSql.CreateOutbox(_options, registration.TableName), cancellationToken)
                 .ConfigureAwait(false);
             await ExecuteAsync(connection, SqlServerSql.CreateDeadLetter(_options, registration.TableName), cancellationToken)
-                .ConfigureAwait(false);
-            await ExecuteAsync(connection, SqlServerSql.EnsureQueue(_options, registration.TableName), cancellationToken)
-                .ConfigureAwait(false);
-            await ExecuteAsync(connection, SqlServerSql.EnsureServices(_options, registration.TableName), cancellationToken)
                 .ConfigureAwait(false);
             await ExecuteAsync(connection, SqlServerSql.CreateTrigger(_options, registration.TableName), cancellationToken)
                 .ConfigureAwait(false);

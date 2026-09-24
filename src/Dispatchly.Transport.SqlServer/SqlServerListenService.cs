@@ -18,8 +18,14 @@ internal sealed class SqlServerListenService : IHostedService
     private readonly Lock _inFlightLock = new();
     private readonly List<Task> _inFlight = [];
     private readonly CancellationTokenSource _stopping = new();
+    private readonly CancellationTokenSource _heartbeatStopping = new();
+    private readonly CancellationTokenSource _receiveStopping = new();
     private readonly TaskCompletionSource _listening = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Task? _run;
+    private string? _consumerId;
+    private string? _queue;
+    private string? _targetService;
+    private string? _initiatorService;
 
     public SqlServerListenService(
         SqlServerTransportOptions options,
@@ -43,8 +49,17 @@ internal sealed class SqlServerListenService : IHostedService
         return _listening.Task.WaitAsync(cancellationToken);
     }
 
+    /// <summary>Stops heartbeats and leaves the consumer row in place. Used to simulate a crash.</summary>
+    internal void Abandon()
+    {
+        _heartbeatStopping.Cancel();
+        _receiveStopping.Cancel();
+    }
+
     public async Task StopAsync(CancellationToken cancellationToken)
     {
+        _heartbeatStopping.Cancel();
+        await DeleteConsumerAsync(cancellationToken).ConfigureAwait(false);
         await _stopping.CancelAsync().ConfigureAwait(false);
         _notifications.Writer.TryComplete();
         if (_run is not null)
@@ -59,6 +74,7 @@ internal sealed class SqlServerListenService : IHostedService
         }
 
         await Task.WhenAll(pending).WaitAsync(cancellationToken).ConfigureAwait(false);
+        await DropQueueAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task RunAsync(CancellationToken stoppingToken)
@@ -77,8 +93,17 @@ internal sealed class SqlServerListenService : IHostedService
                 return;
             }
 
-            var gate = new ListenGate(_listening, tables.Length);
-            await Task.WhenAll(tables.Select(table => ListenAsync(table, gate, stoppingToken))).ConfigureAwait(false);
+            await RegisterAsync(tables, stoppingToken).ConfigureAwait(false);
+            var heartbeat = HeartbeatAsync(stoppingToken);
+            try
+            {
+                await ListenAsync(stoppingToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _heartbeatStopping.Cancel();
+                await heartbeat.ConfigureAwait(false);
+            }
         }
         catch (Exception exception)
         {
@@ -92,60 +117,62 @@ internal sealed class SqlServerListenService : IHostedService
         }
     }
 
-    private async Task ListenAsync(string table, ListenGate gate, CancellationToken stoppingToken)
+    private async Task ListenAsync(CancellationToken stoppingToken)
     {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, _receiveStopping.Token);
+        var cancellationToken = linked.Token;
         var signaled = false;
-        while (!stoppingToken.IsCancellationRequested)
+        while (!cancellationToken.IsCancellationRequested)
         {
             try
             {
                 await using var connection = new SqlConnection(_options.ConnectionString);
-                await connection.OpenAsync(stoppingToken).ConfigureAwait(false);
+                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
                 if (!signaled)
                 {
                     signaled = true;
-                    gate.Ready();
+                    _listening.TrySetResult();
                 }
 
-                while (!stoppingToken.IsCancellationRequested)
+                while (!cancellationToken.IsCancellationRequested)
                 {
                     // RECEIVE auto-commits, so a handler failure cannot roll it back and disable the queue.
-                    var body = await ReceiveOnceAsync(connection, table, stoppingToken).ConfigureAwait(false);
+                    var body = await ReceiveOnceAsync(connection, cancellationToken).ConfigureAwait(false);
                     if (body is not null)
                     {
                         _notifications.Writer.TryWrite(body);
                     }
                 }
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 break;
             }
             catch (Exception exception)
             {
-                if (stoppingToken.IsCancellationRequested)
+                if (cancellationToken.IsCancellationRequested)
                 {
                     break;
                 }
 
-                _logger.LogError(exception, "SQL Server WAITFOR RECEIVE failed for {Table}. Reconnecting.", table);
+                _logger.LogError(exception, "SQL Server WAITFOR RECEIVE failed. Reconnecting.");
                 if (!signaled)
                 {
-                    gate.Failed(exception);
+                    _listening.TrySetException(exception);
                     break;
                 }
 
-                await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken).ConfigureAwait(false);
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
             }
         }
     }
 
-    private async Task<string?> ReceiveOnceAsync(SqlConnection connection, string table, CancellationToken cancellationToken)
+    private async Task<string?> ReceiveOnceAsync(SqlConnection connection, CancellationToken cancellationToken)
     {
         Guid? handle = null;
         string? type = null;
         byte[]? body = null;
-        await using (var command = new SqlCommand(SqlServerSql.Receive(_options, table), connection)
+        await using (var command = new SqlCommand(SqlServerSql.Receive(_options, _queue!), connection)
         {
             CommandTimeout = 0,
         })
@@ -275,26 +302,115 @@ internal sealed class SqlServerListenService : IHostedService
         return text.Length <= 4000 ? text : text[..4000];
     }
 
-    private sealed class ListenGate
+    private async Task RegisterAsync(string[] tables, CancellationToken cancellationToken)
     {
-        private readonly TaskCompletionSource _listening;
-        private readonly int _expected;
-        private int _ready;
-
-        public ListenGate(TaskCompletionSource listening, int expected)
+        _consumerId = Guid.NewGuid().ToString("N");
+        _queue = SqlServerIdentifiers.ConsumerQueue(_consumerId);
+        _targetService = SqlServerIdentifiers.TargetService(_options.Schema, _consumerId);
+        _initiatorService = SqlServerIdentifiers.InitiatorService(_options.Schema, _consumerId);
+        await using var connection = new SqlConnection(_options.ConnectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await ExecuteAsync(connection, SqlServerSql.EnsureQueue(_options, _queue), cancellationToken).ConfigureAwait(false);
+        await ExecuteAsync(connection, SqlServerSql.EnsureServices(_options, _consumerId), cancellationToken).ConfigureAwait(false);
+        await using var insert = new SqlCommand(
+            $"""
+            INSERT INTO {SqlServerSql.Qualify(_options.Schema, IdentifierRules.ConsumerTable)}
+                (id, queue_name, target_service, initiator_service, heartbeat_at, timeout_ms)
+            VALUES (@id, @queue, @target, @initiator, SYSUTCDATETIME(), @timeout_ms);
+            """,
+            connection);
+        insert.Parameters.Add(new SqlParameter("@id", System.Data.SqlDbType.NVarChar, 32) { Value = _consumerId });
+        insert.Parameters.Add(new SqlParameter("@queue", System.Data.SqlDbType.NVarChar, 128) { Value = _queue });
+        insert.Parameters.Add(new SqlParameter("@target", System.Data.SqlDbType.NVarChar, 256) { Value = _targetService });
+        insert.Parameters.Add(new SqlParameter("@initiator", System.Data.SqlDbType.NVarChar, 256) { Value = _initiatorService });
+        insert.Parameters.Add(new SqlParameter("@timeout_ms", System.Data.SqlDbType.Int) { Value = _options.HeartbeatTimeoutMilliseconds });
+        await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        foreach (var table in tables)
         {
-            _listening = listening;
-            _expected = expected;
+            await using var membership = new SqlCommand(
+                $"""
+                INSERT INTO {SqlServerSql.Qualify(_options.Schema, IdentifierRules.ConsumerMembershipTable)}
+                    (consumer_id, table_name)
+                VALUES (@id, @table_name);
+                """,
+                connection);
+            membership.Parameters.Add(new SqlParameter("@id", System.Data.SqlDbType.NVarChar, 32) { Value = _consumerId });
+            membership.Parameters.Add(new SqlParameter("@table_name", System.Data.SqlDbType.NVarChar, 128) { Value = table });
+            await membership.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
+    }
 
-        public void Ready()
+    private async Task HeartbeatAsync(CancellationToken stoppingToken)
+    {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, _heartbeatStopping.Token);
+        var cancellationToken = linked.Token;
+        while (!cancellationToken.IsCancellationRequested)
         {
-            if (Interlocked.Increment(ref _ready) == _expected)
+            try
             {
-                _listening.TrySetResult();
+                await Task.Delay(_options.HeartbeatInterval, cancellationToken).ConfigureAwait(false);
+                await using var connection = new SqlConnection(_options.ConnectionString);
+                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+                await using var command = new SqlCommand(
+                    $"""
+                    UPDATE {SqlServerSql.Qualify(_options.Schema, IdentifierRules.ConsumerTable)}
+                    SET heartbeat_at = SYSUTCDATETIME()
+                    WHERE id = @id;
+                    EXEC {SqlServerSql.Qualify(_options.Schema, "retire_stale_consumers")};
+                    """,
+                    connection);
+                command.Parameters.Add(new SqlParameter("@id", System.Data.SqlDbType.NVarChar, 32) { Value = _consumerId! });
+                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError(exception, "SQL Server consumer heartbeat failed.");
             }
         }
-
-        public void Failed(Exception exception) => _listening.TrySetException(exception);
     }
+
+    private async Task DeleteConsumerAsync(CancellationToken cancellationToken)
+    {
+        if (_consumerId is null)
+        {
+            return;
+        }
+
+        var id = _consumerId;
+        _consumerId = null;
+        await using var connection = new SqlConnection(_options.ConnectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new SqlCommand(
+            $"DELETE FROM {SqlServerSql.Qualify(_options.Schema, IdentifierRules.ConsumerTable)} WHERE id = @id;",
+            connection);
+        command.Parameters.Add(new SqlParameter("@id", System.Data.SqlDbType.NVarChar, 32) { Value = id });
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task DropQueueAsync(CancellationToken cancellationToken)
+    {
+        if (_queue is null || _targetService is null || _initiatorService is null)
+        {
+            return;
+        }
+
+        await using var connection = new SqlConnection(_options.ConnectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new SqlCommand(SqlServerSql.DropConsumer(_options), connection);
+        command.Parameters.Add(new SqlParameter("@queue", System.Data.SqlDbType.NVarChar, 128) { Value = _queue });
+        command.Parameters.Add(new SqlParameter("@target", System.Data.SqlDbType.NVarChar, 256) { Value = _targetService });
+        command.Parameters.Add(new SqlParameter("@initiator", System.Data.SqlDbType.NVarChar, 256) { Value = _initiatorService });
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task ExecuteAsync(SqlConnection connection, string sql, CancellationToken cancellationToken)
+    {
+        await using var command = new SqlCommand(sql, connection);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
 }

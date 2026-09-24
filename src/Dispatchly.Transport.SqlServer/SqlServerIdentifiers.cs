@@ -15,9 +15,9 @@ internal static class SqlServerIdentifiers
 
     public static string Contract(string schema) => schema + "/contract";
 
-    public static string TargetService(string schema, string table) => schema + "/" + table + "/target";
+    public static string ConsumerQueue(string consumerId) => "q" + consumerId;
 
-    public static string InitiatorService(string schema, string table) => schema + "/" + table + "/initiator";
+    public static string TargetService(string schema, string consumerId) => schema + "/c/" + consumerId + "/target";
 
-    public static string Queue(string table) => table + "_queue";
+    public static string InitiatorService(string schema, string consumerId) => schema + "/c/" + consumerId + "/initiator";
 }
