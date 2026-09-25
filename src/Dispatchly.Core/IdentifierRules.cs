@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 
 namespace Dispatchly.Core;
 
-/// <summary>Validates PostgreSQL identifiers used by Dispatchly.</summary>
+/// <summary>Validates schema, table, and channel identifiers used by Dispatchly.</summary>
 public static partial class IdentifierRules
 {
     /// <summary>Maximum length of a PostgreSQL identifier in bytes.</summary>

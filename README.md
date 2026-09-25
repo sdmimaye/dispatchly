@@ -1,6 +1,6 @@
 # Dispatchly
 
-Status: initial outbox transports shipped (in-memory, PostgreSQL, and SQL Server), plus EF Core domain-event enlistment.
+Status: in-memory, PostgreSQL, and SQL Server outbox transports, EF Core domain-event enlistment, durable idempotency, and host round-robin.
 
 Dispatchly is an outbox messaging library for .NET. Enqueue a message through `IMessagePublisher`, then deliver it to an in-process handler at least once.
 
@@ -33,6 +33,38 @@ The PostgreSQL transport inserts and commits the row inside `IMessagePublisher.P
 The SQL Server transport uses the same outbox tables and claim rules. The insert trigger `SEND`s a Service Broker message after the commit, and the host blocks in `WAITFOR (RECEIVE)`. It does not poll. Each handling host has its own queue and target service. A publish-only registration is not in the wake-up ring. When several hosts handle the same message type, each insert and each redelivery sends to the next live host. A message published while no handler host is live stays in the outbox until `redeliver_undelivered` runs after one joins. SQL Server Agent runs that procedure for rows whose visibility lock has expired. Set `SqlServerTransportOptions.ScheduleRedelivery` to false when Agent is not running, and call `ISqlServerMaintenance.RedeliverAsync` from your own scheduler. If scheduling is left on and Agent is stopped, startup throws. Azure SQL Database has no Service Broker, so this transport cannot run there.
 
 The in-memory transport enqueues inside `IMessagePublisher.PublishAsync`. Anything still queued is lost when the process exits, including messages whose handlers have not finished.
+
+`MessageId` comes from `MessageId.New()`, a version-7 GUID. `MessageContext.Attempt` is one-based. `MessageContext.EnqueuedAt` is when the row or in-memory envelope was created.
+
+Every `IMessageHandler<TMessage>` registered for that type runs in one delivery scope, in registration order. The first exception fails the delivery, so handlers that already ran on that attempt can run again. Registering the same handler type twice throws.
+
+## Retry
+
+`MaxAttempts` defaults to 5 on every transport. A durable claim increments `attempt_count` and hides the row for `VisibilityTimeout` (default 30 seconds). A handler exception stores `last_error`, truncated to 4000 characters, and sets `locked_until` to `VisibilityTimeout * 2^(attempt - 1)`, capped at `MaxBackoff` (default 5 minutes). Redelivery can wake the row after that. The attempt that reaches `MaxAttempts` moves the row to `{table}_dead_letter`.
+
+The in-memory transport waits `RetryDelay` (default 20 milliseconds) and requeues. After the last attempt it stores an `InMemoryDeadLetter` on `IInMemoryDeadLetterStore`. That store disappears with the process.
+
+## Transport options
+
+PostgreSQL and SQL Server share these defaults:
+
+| Option | Default |
+| --- | --- |
+| `Schema` | `dispatchly` |
+| `HeartbeatTimeout` | 5 seconds |
+| `VisibilityTimeout` | 30 seconds |
+| `MaxAttempts` | 5 |
+| `MaxBackoff` | 5 minutes |
+| `CronSchedule` | `* * * * *` (every minute) |
+| `CronJobName` | `dispatchly_redeliver` |
+| `RedeliveryBatchSize` | 100 |
+| `ScheduleRedelivery` | `true` |
+
+`ConnectionString` is required. A handling host heartbeats about every `HeartbeatTimeout / 3`. SQL Server `CronSchedule` accepts `* * * * *` or `*/n * * * *` with `n` from 1 to 60. PostgreSQL `CronSchedule` is passed to `pg_cron`.
+
+`PostgresTransportOptions.Channel` is still validated at startup (`^[a-z_][a-z0-9_]*$`, at most 63 characters). Each host listens on a private channel named from its consumer id.
+
+In-memory options are `MaxAttempts` (5) and `RetryDelay` (20 milliseconds).
 
 ## Domain events
 
@@ -69,6 +101,7 @@ services.AddDispatchly()
     {
         options.ConnectionString = connectionString;
     });
+```
 
 SQL Server registration is the same shape:
 
@@ -80,11 +113,10 @@ services.AddDispatchly()
         options.ConnectionString = connectionString;
     });
 ```
-```
 
 The reflection overload `AddHandler<TMessage, THandler>()` and `AddHandlersFromAssemblies` use reflection-based JSON and honor `[DispatchlyTable("table_name")]`. They are not trimming or AOT compatible.
 
-`UseTableNaming` chooses the name when neither `[DispatchlyTable]` nor a `tableName` argument is set. The default is `TableNaming.SnakeCase` (`OrderPlaced` becomes `order_placed`). `TableNaming.PascalCase` keeps the type name. Call it before registering messages.
+`UseTableNaming` chooses the name when neither `[DispatchlyTable]` nor a `tableName` argument is set. The default is `TableNaming.SnakeCase` (`OrderPlaced` becomes `order_placed`). `TableNaming.PascalCase` keeps the type name. Call it before registering messages. A table name matches `^[A-Za-z_][A-Za-z0-9_]*$` and is at most 51 characters, leaving room for the `_dead_letter` suffix. Schema names match `^[a-z_][a-z0-9_]*$` and are at most 63 characters. `outbox_table`, `idempotency_inbox`, `consumer`, `consumer_table`, `outbox_cursor`, and `settings` are reserved. A derived name that does not fit is shortened and suffixed with a hash of the type name.
 
 ```csharp
 services.AddDispatchly()
@@ -94,7 +126,7 @@ services.AddDispatchly()
 
 `AddMessage<TMessage>(jsonTypeInfo)` registers a type for publishing without a handler. That host is not in the wake-up ring, so another host can deliver it. The in-memory transport rejects that publish, because it can only deliver inside the current process.
 
-The source generator finds public `IMessageHandler<T>` implementations and emits `AddDispatchlyGeneratedHandlers` plus a `JsonSerializerContext`. Reference `Dispatchly.SourceGenerators` as an analyzer, then:
+The source generator emits `AddDispatchlyGeneratedHandlers` plus a `JsonSerializerContext`. Reference `Dispatchly.SourceGenerators` as an analyzer, then:
 
 ```csharp
 services.AddDispatchly()
@@ -102,18 +134,29 @@ services.AddDispatchly()
     .UseInMemoryTransport();
 ```
 
-Generated serialization supports public properties of primitive types, `string`, `Guid`, and the built-in date and time types. For anything else, pass your own `JsonTypeInfo<T>`.
+The generator finds public, non-abstract classes and records that implement `IMessageHandler<T>`. The message must be a non-generic reference type with at least one public property, and a public constructor whose parameters match those properties. Supported property types are the primitive types, `string`, `Guid`, `DateTime`, `DateTimeOffset`, `DateOnly`, `TimeOnly`, `TimeSpan`, and their nullable forms. JSON names lowercase the first character. `[JsonPropertyName]` wins. `DLY001` is an invalid `[DispatchlyTable]` name. `DLY002` is an unsupported message shape, including generic and value-type messages. For those, pass your own `JsonTypeInfo<T>`.
+
+Reflection registration uses `JsonSerializerDefaults.Web`, so property names are camel case.
 
 ## Pipeline
 
-`UseBehavior<TBehavior>` adds a step around every delivery. The first registration is the outermost. A behavior sees the deserialized message, `MessageContext`, and the delivery scope. Call `next` to continue. Return without calling it to stop the pipeline. A delivery that returns without throwing is still acknowledged.
+`UseBehavior<TBehavior>` adds a step around every delivery. The first registration is the outermost. Registering the same behavior type twice throws. A behavior sees the deserialized message, `MessageContext`, and the delivery scope on `MessageEnvelope`. Call `next` to continue. Return without calling it to stop the pipeline. A delivery that returns without throwing is still acknowledged, including an idempotency hit.
 
 ```csharp
+public sealed class LoggingBehavior : IMessageBehavior
+{
+    public Task InvokeAsync(MessageEnvelope envelope, MessagePipelineDelegate next, CancellationToken cancellationToken) =>
+        next(envelope, cancellationToken);
+}
+
 services.AddDispatchly()
     .AddHandler<OrderPlaced, OrderPlacedHandler>(OrderJsonContext.Default.OrderPlaced)
+    .UseBehavior<LoggingBehavior>()
     .UsePostgresTransport(options => options.ConnectionString = connectionString)
     .UsePostgresIdempotency();
 ```
+
+`MessageContext` exposes `Id`, `Attempt`, and `EnqueuedAt`. `SetFeature`, `TryGetFeature`, and `GetRequiredFeature` pass a value from a behavior to later steps. A second `SetFeature` for the same type replaces the previous one.
 
 `UsePostgresIdempotency`, `UseSqlServerIdempotency`, and `UseInMemoryIdempotency` register `IdempotencyBehavior`. Call the transport method first. The durable stores create `{schema}.idempotency_inbox`. That name is reserved and cannot be a message table.
 
@@ -123,9 +166,13 @@ A different store can implement `IIdempotencyStore` and be registered with `UseB
 
 ## Outbox layout
 
-Each message type gets `{schema}.{table}` and `{schema}.{table}_dead_letter`. The default schema is `dispatchly`. When no table is specified, `UseTableNaming` derives it. The default, `TableNaming.SnakeCase`, turns `OrderPlaced` into `order_placed`. `TableNaming.PascalCase` keeps `OrderPlaced`. `[DispatchlyTable]` and the `tableName` argument override the strategy. A handling host inserts a `consumer` row at start, heartbeats it, and deletes it on graceful stop. `HeartbeatTimeout` defaults to 5 seconds. SQL Server creates one queue and target service for that host, and drops them when the host stops or the heartbeat expires.
+Each message type gets `{schema}.{table}` and `{schema}.{table}_dead_letter`. The default schema is `dispatchly`. When no table is specified, `UseTableNaming` derives it. The default, `TableNaming.SnakeCase`, turns `OrderPlaced` into `order_placed`. `TableNaming.PascalCase` keeps `OrderPlaced`. `[DispatchlyTable]` and the `tableName` argument override the strategy. PostgreSQL stores `payload` as `jsonb`. SQL Server stores it as `nvarchar(max)`. An outbox row has `id`, `payload`, `created_at`, `attempt_count`, `locked_until`, `delivered_at`, and `last_error`. A dead-letter row has `id`, `payload`, `created_at`, `dead_lettered_at`, `attempt_count`, and `last_error`.
 
-A claim increments `attempt_count` and sets `locked_until`. Success sets `delivered_at` only when the attempt still matches. Failure stores `last_error` and backs off. When the attempt reaches `MaxAttempts`, the row moves to that type's dead-letter table. Delivered rows are kept. Purging them is out of scope.
+`{schema}.outbox_table` lists message tables so `redeliver_undelivered` can visit them. A handling host inserts a `consumer` row at start, heartbeats it, and deletes it on graceful stop. `consumer_table` records which message tables that host handles. `outbox_cursor` stores the round-robin position for each table. The consumer id is new on every process start, so a restart joins the ring as a new member. SQL Server creates one queue and target service for that host, and drops them when the host stops or the heartbeat expires.
+
+A claim increments `attempt_count` and sets `locked_until`. Success sets `delivered_at` only when the attempt still matches. Failure stores `last_error` and backs off. When the attempt reaches `MaxAttempts`, the row moves to that type's dead-letter table. Delivered and dead-lettered rows are kept. Purging them is out of scope. `idempotency_inbox` has `id` and `completed_at`.
+
+Each insert and each redelivery advances `outbox_cursor` and wakes the next live host for that table. Fairness counts wake-ups. A host that joins or leaves changes who is chosen on later messages. An empty ring commits the row and wakes nobody.
 
 ## PostgreSQL publish
 

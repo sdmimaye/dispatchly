@@ -7,3 +7,5 @@ Every transport publishes through `IMessagePublisher`. PostgreSQL and SQL Server
 Handlers are idempotent. A crash after the handler returns and before the acknowledgement can deliver the same message again. Message behaviors wrap that delivery. `UsePostgresIdempotency` and `UseSqlServerIdempotency` commit handler writes made on the delivery transaction together with the message id, so that crash skips the handler on the next attempt.
 
 `Dispatchly.EntityFrameworkCore` enlists those same messages from `IDomainEventSource` on the `SaveChanges` transaction, so the aggregate and the outbox row commit together. `PublishAsync` still commits on its own connection.
+
+A failed delivery hides the row for a doubling backoff, starting at `VisibilityTimeout` and capped at `MaxBackoff`. The attempt that reaches `MaxAttempts` moves the row to that type's dead-letter table. When several hosts handle the same type, each insert and each redelivery wakes the next live host. Every handler registered for the type in that process still runs.

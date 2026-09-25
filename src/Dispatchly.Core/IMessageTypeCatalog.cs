@@ -9,7 +9,7 @@ public interface IMessageTypeCatalog
     /// <summary>Looks up a registration by CLR type.</summary>
     bool TryGet(Type messageType, out MessageTypeRegistration registration);
 
-    /// <summary>Looks up a registration by PostgreSQL table name.</summary>
+    /// <summary>Looks up a registration by outbox table name.</summary>
     bool TryGetByTable(string tableName, out MessageTypeRegistration registration);
 
     /// <summary>Returns the registration for <paramref name="messageType" />.</summary>
