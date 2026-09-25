@@ -3,7 +3,7 @@ using System.Reflection;
 
 namespace Dispatchly.Core;
 
-/// <summary>Resolves the PostgreSQL table name for a message type.</summary>
+/// <summary>Resolves the outbox table name for a message type.</summary>
 public static class MessageTableNames
 {
     /// <summary>

@@ -19,6 +19,8 @@
 - `IDomainEventSource` exposes the events an aggregate has raised
 - `DomainEventSource` stores those events; `Raise` records one until commit
 - `UseDispatchlyOutbox` enlists those events during `SaveChanges` and clears them after commit
+- When the save has no transaction, the interceptor begins one and commits it after the save. That save runs outside a retrying execution strategy
+- The context uses the same database as the transport, and the host is started so the outbox tables exist
 - `PublishAsync` is unchanged
 
 ## Sample

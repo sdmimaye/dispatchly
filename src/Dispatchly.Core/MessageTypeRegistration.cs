@@ -8,7 +8,7 @@ public sealed class MessageTypeRegistration
     /// <summary>CLR message type.</summary>
     public required Type MessageType { get; init; }
 
-    /// <summary>Unqualified PostgreSQL table name.</summary>
+    /// <summary>Unqualified outbox table name.</summary>
     public required string TableName { get; init; }
 
     /// <summary>Serializes a message instance to JSON.</summary>
